@@ -8,6 +8,7 @@ RUN npm ci
 COPY . .
 
 ENV NODE_ENV=production
-EXPOSE 3000
+ENV PORT=10000
+EXPOSE ${PORT}
 
 CMD ["npm", "run", "ui"]
