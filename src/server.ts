@@ -1,6 +1,4 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-
-const CORS_ORIGIN = process.env.CORS_ORIGIN;
 import { readFile } from "fs/promises";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
@@ -11,6 +9,7 @@ import { chat, createHistory, getOpeningGreeting } from "./agent.js";
 
 dotenv.config();
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN;
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PUBLIC = join(ROOT, "public");
