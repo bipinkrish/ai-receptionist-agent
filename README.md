@@ -59,28 +59,26 @@ For production on GCP, [Workload Identity](https://cloud.google.com/kubernetes-e
 npm install
 ```
 
-## Seed test calendar events
-
-Creates sample classes for the next week (full 6pm Reformer, open 7pm Reformer, etc.):
+## Seed test data
 
 ```bash
 npm run seed
 ```
 
-Events use this capacity convention in the **description** field:
+## Reset (clear calendar + contacts)
 
-```
-Capacity: 6/8
-Attendee: Jane Doe (555-1234)
-```
+Removes **all** calendar events and all Contacts rows (keeps the header):
 
-`6/8` = 6 spots taken, 8 max.
+```bash
+npm run reset
+npm run seed   # optional — repopulate test data
+```
 
 ## Test tools standalone
 
 ```bash
-npm run verify:google    # confirm calendar access + list visible calendars
-npm run test:calendar   # checkAvailability against live calendar
+npm run verify:google    # confirm calendar + sheet access
+npm run test:calendar   # listAvailableSlots / checkSlot against live calendar
 npm run test:sheets     # append/update a test contact row
 ```
 
@@ -108,8 +106,10 @@ scripts/
   seed-calendar.ts  Test event seeder
 ```
 
-## Capacity & timezone notes
+## Booking model & timezone
 
-- All class times use **STUDIO_TIMEZONE** from `.env` (default `America/Los_Angeles`).
-- Class fullness is determined by the `Capacity: X/Y` line in each event's description.
-- Bookings append an `Attendee: Name (phone)` line and increment the booked count.
+- Sessions are **30 minutes**, **one person per slot**, within business hours:
+  - Mon–Fri 6am–8pm, Sat 8am–2pm, **Sun closed (holiday)**
+- There are no preset class types — tools compute open slots from the calendar.
+- All times use **STUDIO_TIMEZONE** from `.env` (default `America/Los_Angeles`).
+- The agent must use `listAvailableSlots`, `checkSlot`, and `bookSlot` — never invent times.

@@ -1,84 +1,115 @@
 /**
- * Seeds test events on CALENDAR_ID for the next 7 days.
- *
- * Capacity convention (in event description):
- *   "Capacity: 6/8" means 6 booked out of 8 max spots.
- *   Attendee lines: "Attendee: Name (phone)"
+ * Seeds sample 30-minute booked sessions and matching Contacts sheet rows.
+ * All times are validated against business hours before writing.
  */
 
 import dotenv from "dotenv";
-import { calendar, CALENDAR_ID, getServiceAccountEmail } from "../src/google-auth.js";
-import {
-  STUDIO_TIMEZONE,
-  addDaysToDateTime,
-  addHoursToDateTime,
-  nextWeekdayDateTime,
-} from "../src/studio-time.js";
+import { calendar, CALENDAR_ID, SHEET_ID, getServiceAccountEmail } from "../src/google-auth.js";
+import { SLOT_MINUTES, validateSessionSlot } from "../src/business-hours.js";
+import { STUDIO_TIMEZONE, nextWeekdayDateTime, studioDateParts } from "../src/studio-time.js";
+import { ensureContactsHeader, logContact } from "../src/tools/sheets.js";
 
 dotenv.config();
 
-const events = [
-  {
-    summary: "6pm Reformer - Thursday",
-    start: nextWeekdayDateTime(4, 18, 0),
-    description:
-      "Capacity: 8/8\nAttendee: Alice (555-0001)\nAttendee: Bob (555-0002)\nAttendee: Carol (555-0003)\nAttendee: Dan (555-0004)\nAttendee: Eve (555-0005)\nAttendee: Frank (555-0006)\nAttendee: Grace (555-0007)\nAttendee: Hank (555-0008)",
-  },
-  {
-    summary: "7pm Reformer - Thursday",
-    start: nextWeekdayDateTime(4, 19, 0),
-    description:
-      "Capacity: 6/8\nAttendee: Iris (555-0009)\nAttendee: Jack (555-0010)\nAttendee: Kate (555-0011)\nAttendee: Leo (555-0012)\nAttendee: Mia (555-0013)\nAttendee: Noah (555-0014)",
-  },
-  {
-    summary: "6pm Mat Pilates - Monday",
-    start: nextWeekdayDateTime(1, 18, 0),
-    description:
-      "Capacity: 3/10\nAttendee: Olivia (555-0015)\nAttendee: Paul (555-0016)\nAttendee: Quinn (555-0017)",
-  },
-  {
-    summary: "7pm Reformer - Saturday",
-    start: addDaysToDateTime(nextWeekdayDateTime(6, 19, 0), 3),
-    description: "Capacity: 2/8\nAttendee: Rita (555-0018)\nAttendee: Sam (555-0019)",
-  },
+function addMinutes(dateTime: string, minutes: number): string {
+  const [datePart, timePart] = dateTime.split("T");
+  const [h, m] = timePart.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  const endH = Math.floor(total / 60);
+  const endM = total % 60;
+  return `${datePart}T${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}:00`;
+}
+
+function todayDate(): string {
+  const now = studioDateParts();
+  return `${now.year}-${now.month}-${now.day}`;
+}
+
+const bookings = [
+  { name: "Alice", phone: "555-0001", start: nextWeekdayDateTime(4, 18, 0) },
+  { name: "Bob", phone: "555-0002", start: nextWeekdayDateTime(4, 18, 30) },
+  { name: "Carol", phone: "555-0003", start: nextWeekdayDateTime(2, 10, 0) },
+  { name: "Dan", phone: "555-0004", start: nextWeekdayDateTime(6, 9, 0) },
 ];
 
-async function seed() {
-  if (!CALENDAR_ID) {
-    console.error("CALENDAR_ID is not set in .env");
-    process.exit(1);
-  }
+async function seedCalendar() {
+  for (const booking of bookings) {
+    const validation = validateSessionSlot(booking.start);
+    if (!validation.valid) {
+      throw new Error(`Seed slot for ${booking.name} invalid: ${validation.reason}`);
+    }
 
-  for (const event of events) {
-    const end = addHoursToDateTime(event.start, 1);
+    const end = addMinutes(booking.start, SLOT_MINUTES);
 
     try {
       const res = await calendar.events.insert({
         calendarId: CALENDAR_ID,
         requestBody: {
-          summary: event.summary,
-          description: event.description,
-          start: { dateTime: event.start, timeZone: STUDIO_TIMEZONE },
+          summary: `Session: ${booking.name}`,
+          description: `Phone: ${booking.phone}\nSeeded test booking`,
+          start: { dateTime: booking.start, timeZone: STUDIO_TIMEZONE },
           end: { dateTime: end, timeZone: STUDIO_TIMEZONE },
         },
       });
-      console.log(`Created: ${res.data.summary} (${res.data.start?.dateTime})`);
+      console.log(`Calendar: ${res.data.summary} (${res.data.start?.dateTime})`);
     } catch (err: unknown) {
       const status = (err as { code?: number }).code;
       if (status === 404) {
         const email = await getServiceAccountEmail();
         console.error(
-          `Failed to create "${event.summary}" — calendar not found (404).\n` +
-            `Share calendar ${CALENDAR_ID} with ${email} as "Make changes to events".\n` +
-            "Run `npm run verify:google` for more detail.",
+          `Calendar not found — share ${CALENDAR_ID} with ${email} as "Make changes to events".`,
         );
         process.exit(1);
       }
       throw err;
     }
   }
+}
 
-  console.log(`\nDone (${STUDIO_TIMEZONE}). Check Google Calendar for Capacity lines in descriptions.`);
+async function seedSheets() {
+  await ensureContactsHeader();
+  const date = todayDate();
+
+  for (const booking of bookings) {
+    const result = await logContact({
+      name: booking.name,
+      phone: booking.phone,
+      date,
+      topic: "seed",
+      outcome: "booked",
+      notes: `Seeded with calendar session at ${booking.start}`,
+    });
+    console.log(`Contacts: ${result.message}`);
+  }
+}
+
+async function seed() {
+  if (!CALENDAR_ID) {
+    console.error("CALENDAR_ID is not set in .env");
+    process.exit(1);
+  }
+  if (!SHEET_ID) {
+    console.error("SHEET_ID is not set in .env");
+    process.exit(1);
+  }
+
+  console.log("Seeding calendar (business-hours validated)...\n");
+  await seedCalendar();
+
+  console.log("\nSeeding Contacts sheet...\n");
+  try {
+    await seedSheets();
+  } catch (err: unknown) {
+    const status = (err as { code?: number }).code;
+    if (status === 403 || status === 404) {
+      const email = await getServiceAccountEmail();
+      console.error(`Sheet error — share ${SHEET_ID} with ${email} as Editor.`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  console.log(`\nDone. ${bookings.length} calendar slots + ${bookings.length} contact rows.`);
 }
 
 seed().catch((err) => {

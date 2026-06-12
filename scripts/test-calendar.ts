@@ -1,16 +1,19 @@
 import dotenv from "dotenv";
-import { checkAvailability } from "../src/tools/calendar.js";
+import { listAvailableSlots, checkSlot, getStudioBusinessHours } from "../src/tools/calendar.js";
 
 dotenv.config();
 
 async function main() {
-  console.log("Checking 6pm Reformer on Thursday...\n");
-  const result = await checkAvailability("Reformer", "Thursday", "6pm");
-  console.log(JSON.stringify(result, null, 2));
+  console.log("Business hours:\n", JSON.stringify(await getStudioBusinessHours(), null, 2));
 
-  console.log("\nChecking 7pm Reformer on Thursday...\n");
-  const open = await checkAvailability("Reformer", "Thursday", "7pm");
-  console.log(JSON.stringify(open, null, 2));
+  console.log("\nOpen slots on Thursday:\n");
+  console.log(JSON.stringify(await listAvailableSlots("Thursday"), null, 2));
+
+  console.log("\nCheck 6pm Thursday:\n");
+  console.log(JSON.stringify(await checkSlot("Thursday", "6pm"), null, 2));
+
+  console.log("\nCheck 7pm Thursday:\n");
+  console.log(JSON.stringify(await checkSlot("Thursday", "7pm"), null, 2));
 }
 
 main().catch((err) => {

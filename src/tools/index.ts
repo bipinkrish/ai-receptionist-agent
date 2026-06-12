@@ -1,130 +1,204 @@
 import {
-  checkAvailability,
-  bookClass,
-  rescheduleClass,
+  bookSlot,
+  cancelBooking,
+  checkSlot,
+  findBookings,
+  getStudioBusinessHours,
+  listAvailableSlots,
+  rescheduleBooking,
 } from "./calendar.js";
 import { findContact, logContact } from "./sheets.js";
 
+const getBusinessHoursTool = {
+  type: "function" as const,
+  function: {
+    name: "getBusinessHours",
+    description: "Returns studio business hours and timezone. Use for hours questions — do not guess.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
+const listAvailableSlotsTool = {
+  type: "function" as const,
+  function: {
+    name: "listAvailableSlots",
+    description:
+      "List open 30-minute slots for a day. Returns a summary and slot list — ask the caller what time they want; do not read every slot aloud.",
+    parameters: {
+      type: "object",
+      properties: {
+        dayOfWeek: { type: "string", description: "e.g. Monday, Thursday" },
+      },
+      required: ["dayOfWeek"],
+    },
+  },
+};
+
+const checkSlotTool = {
+  type: "function" as const,
+  function: {
+    name: "checkSlot",
+    description: "Check if a specific 30-minute session slot is available on a given day and time.",
+    parameters: {
+      type: "object",
+      properties: {
+        dayOfWeek: { type: "string" },
+        time: { type: "string", description: "e.g. 6pm, 6:30pm, 18:00" },
+      },
+      required: ["dayOfWeek", "time"],
+    },
+  },
+};
+
+const bookSlotTool = {
+  type: "function" as const,
+  function: {
+    name: "bookSlot",
+    description: "Book a 30-minute session. Use the exact dateTime from listAvailableSlots or checkSlot.",
+    parameters: {
+      type: "object",
+      properties: {
+        dateTime: { type: "string", description: "Exact dateTime from a tool response" },
+        callerName: { type: "string" },
+        callerPhone: { type: "string" },
+      },
+      required: ["dateTime", "callerName", "callerPhone"],
+    },
+  },
+};
+
+const findBookingsTool = {
+  type: "function" as const,
+  function: {
+    name: "findBookings",
+    description: "Find upcoming session bookings for a phone number.",
+    parameters: {
+      type: "object",
+      properties: {
+        phone: { type: "string" },
+      },
+      required: ["phone"],
+    },
+  },
+};
+
+const rescheduleBookingTool = {
+  type: "function" as const,
+  function: {
+    name: "rescheduleBooking",
+    description: "Move an existing booking to a new slot. Verify the new slot with checkSlot first.",
+    parameters: {
+      type: "object",
+      properties: {
+        callerPhone: { type: "string" },
+        callerName: { type: "string" },
+        fromDateTime: { type: "string", description: "Current booking dateTime from findBookings" },
+        toDateTime: { type: "string", description: "New slot dateTime from listAvailableSlots or checkSlot" },
+      },
+      required: ["callerPhone", "callerName", "fromDateTime", "toDateTime"],
+    },
+  },
+};
+
+const cancelBookingTool = {
+  type: "function" as const,
+  function: {
+    name: "cancelBooking",
+    description:
+      "Cancel an existing booking by deleting the calendar event. Use dateTime from findBookings. Call before saying it is cancelled.",
+    parameters: {
+      type: "object",
+      properties: {
+        callerPhone: { type: "string" },
+        dateTime: { type: "string", description: "Exact dateTime from findBookings" },
+      },
+      required: ["callerPhone", "dateTime"],
+    },
+  },
+};
+
+const findContactTool = {
+  type: "function" as const,
+  function: {
+    name: "findContact",
+    description: "Look up an existing contact by phone number.",
+    parameters: {
+      type: "object",
+      properties: { phone: { type: "string" } },
+      required: ["phone"],
+    },
+  },
+};
+
+const logContactTool = {
+  type: "function" as const,
+  function: {
+    name: "logContact",
+    description: "Log or update a caller in the Contacts sheet. Call before saying goodbye.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        phone: { type: "string" },
+        date: { type: "string", description: "Call date as YYYY-MM-DD (use today's date)" },
+        topic: { type: "string" },
+        outcome: { type: "string" },
+        notes: { type: "string" },
+      },
+      required: ["name", "phone", "date", "topic", "outcome", "notes"],
+    },
+  },
+};
+
+export const calendarToolDefinitions = [
+  getBusinessHoursTool,
+  listAvailableSlotsTool,
+  checkSlotTool,
+  bookSlotTool,
+  findBookingsTool,
+  rescheduleBookingTool,
+  cancelBookingTool,
+];
+export const contactToolDefinitions = [findContactTool];
+export const loggingToolDefinitions = [logContactTool];
+
 export const toolDefinitions = [
-  {
-    type: "function" as const,
-    function: {
-      name: "checkAvailability",
-      description: "Check if a pilates class has open spots on a given day and time. Returns capacity info and alternative times if full.",
-      parameters: {
-        type: "object",
-        properties: {
-          className: { type: "string", description: "Class type, e.g. Reformer, Mat Pilates" },
-          dayOfWeek: { type: "string", description: "Day name, e.g. Thursday" },
-          time: { type: "string", description: "Class time, e.g. 6pm or 18:00" },
-        },
-        required: ["className", "dayOfWeek", "time"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "bookClass",
-      description: "Book a caller into a class. Requires caller name and phone.",
-      parameters: {
-        type: "object",
-        properties: {
-          className: { type: "string" },
-          dateTime: { type: "string", description: "ISO 8601 datetime of the class start" },
-          callerName: { type: "string" },
-          callerPhone: { type: "string" },
-        },
-        required: ["className", "dateTime", "callerName", "callerPhone"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "rescheduleClass",
-      description: "Move an existing booking to a different class time.",
-      parameters: {
-        type: "object",
-        properties: {
-          callerIdentifier: { type: "string", description: "Caller name or phone number" },
-          fromDateTime: { type: "string", description: "ISO datetime of current booking" },
-          toClassName: { type: "string" },
-          toDateTime: { type: "string", description: "ISO datetime of new class" },
-        },
-        required: ["callerIdentifier", "fromDateTime", "toClassName", "toDateTime"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "findContact",
-      description: "Look up an existing contact by phone number.",
-      parameters: {
-        type: "object",
-        properties: {
-          phone: { type: "string" },
-        },
-        required: ["phone"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "logContact",
-      description: "Log or update a caller in the Contacts sheet. Call at the end of every conversation.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          phone: { type: "string" },
-          date: { type: "string", description: "Date of call, e.g. 2026-06-12" },
-          topic: { type: "string", description: "Reason for call, e.g. booking, pricing, reschedule" },
-          outcome: { type: "string", description: "Result, e.g. booked, escalated, info provided" },
-          notes: { type: "string", description: "Any extra details" },
-        },
-        required: ["name", "phone", "date", "topic", "outcome", "notes"],
-      },
-    },
-  },
+  ...calendarToolDefinitions,
+  ...contactToolDefinitions,
+  ...loggingToolDefinitions,
 ];
 
 export async function runTool(name: string, args: Record<string, string>): Promise<string> {
   switch (name) {
-    case "checkAvailability": {
-      const result = await checkAvailability(args.className, args.dayOfWeek, args.time);
-      return JSON.stringify(result);
-    }
-    case "bookClass": {
-      const result = await bookClass(args.className, args.dateTime, args.callerName, args.callerPhone);
-      return JSON.stringify(result);
-    }
-    case "rescheduleClass": {
-      const result = await rescheduleClass(
-        args.callerIdentifier,
-        args.fromDateTime,
-        args.toClassName,
-        args.toDateTime,
+    case "getBusinessHours":
+      return JSON.stringify(await getStudioBusinessHours());
+    case "listAvailableSlots":
+      return JSON.stringify(await listAvailableSlots(args.dayOfWeek));
+    case "checkSlot":
+      return JSON.stringify(await checkSlot(args.dayOfWeek, args.time));
+    case "bookSlot":
+      return JSON.stringify(await bookSlot(args.dateTime, args.callerName, args.callerPhone));
+    case "findBookings":
+      return JSON.stringify(await findBookings(args.phone));
+    case "rescheduleBooking":
+      return JSON.stringify(
+        await rescheduleBooking(args.callerPhone, args.fromDateTime, args.toDateTime, args.callerName),
       );
-      return JSON.stringify(result);
-    }
-    case "findContact": {
-      const result = await findContact(args.phone);
-      return JSON.stringify(result ?? { found: false });
-    }
-    case "logContact": {
-      const result = await logContact({
-        name: args.name,
-        phone: args.phone,
-        date: args.date,
-        topic: args.topic,
-        outcome: args.outcome,
-        notes: args.notes,
-      });
-      return JSON.stringify(result);
-    }
+    case "cancelBooking":
+      return JSON.stringify(await cancelBooking(args.callerPhone, args.dateTime));
+    case "findContact":
+      return JSON.stringify((await findContact(args.phone)) ?? { found: false });
+    case "logContact":
+      return JSON.stringify(
+        await logContact({
+          name: args.name,
+          phone: args.phone,
+          date: args.date,
+          topic: args.topic,
+          outcome: args.outcome,
+          notes: args.notes,
+        }),
+      );
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }

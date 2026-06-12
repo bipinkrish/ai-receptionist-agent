@@ -1,23 +1,77 @@
 import Groq from "groq-sdk";
-import type { ChatCompletionMessageParam, ChatCompletionToolMessageParam } from "groq-sdk/resources/chat/completions";
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionToolMessageParam,
+} from "groq-sdk/resources/chat/completions";
 import { SYSTEM_POLICY } from "./policy.js";
-import { toolDefinitions, runTool } from "./tools/index.js";
+import { runTool } from "./tools/index.js";
+import {
+  getActiveTools,
+  getToolStatusMessage,
+  getWorkingStatusMessage,
+  schedulingPolicyAddon,
+  shouldRequireTools,
+} from "./tool-routing.js";
 
 const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const MAX_TOOL_ROUNDS = 10;
+const MAX_TOOL_ROUNDS = 8;
+
+const OPENING_GREETING =
+  "Hi, thanks for calling Solstice Pilates! How can I help you today?";
+
+export type ChatStatusCallback = (message: string) => void;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-export async function chat(userMessage: string, history: ChatCompletionMessageParam[]): Promise<string> {
+async function callGroq(
+  history: ChatCompletionMessageParam[],
+  tools: ChatCompletionTool[] | undefined,
+  toolChoice: "auto" | "required",
+  extraSystem = "",
+) {
+  return groq.chat.completions.create({
+    model: MODEL,
+    messages: [{ role: "system", content: SYSTEM_POLICY + extraSystem }, ...history],
+    ...(tools?.length ? { tools, tool_choice: toolChoice } : {}),
+  });
+}
+
+export function createHistory(): ChatCompletionMessageParam[] {
+  return [{ role: "assistant", content: OPENING_GREETING }];
+}
+
+export function getOpeningGreeting(): string {
+  return OPENING_GREETING;
+}
+
+export async function chat(
+  userMessage: string,
+  history: ChatCompletionMessageParam[],
+  onStatus?: ChatStatusCallback,
+): Promise<string> {
   history.push({ role: "user", content: userMessage });
 
+  const tools = getActiveTools(history, userMessage);
+  const extraSystem = schedulingPolicyAddon(tools);
+  let requireTools = shouldRequireTools(userMessage, history);
+
+  let statusShown = false;
+  const emitStatus = (message: string | undefined) => {
+    if (!message || statusShown) return;
+    statusShown = true;
+    onStatus?.(message);
+  };
+
+  emitStatus(getWorkingStatusMessage(userMessage, history));
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
-      messages: [{ role: "system", content: SYSTEM_POLICY }, ...history],
-      tools: toolDefinitions,
-      tool_choice: "auto",
-    });
+    const response = await callGroq(
+      history,
+      tools,
+      requireTools && tools?.length ? "required" : "auto",
+      extraSystem,
+    );
 
     const choice = response.choices[0]?.message;
     if (!choice) return "Sorry, I didn't get a response. Please try again.";
@@ -26,11 +80,19 @@ export async function chat(userMessage: string, history: ChatCompletionMessagePa
 
     const toolCalls = choice.tool_calls;
     if (!toolCalls?.length) {
+      if (requireTools && tools?.length && round === 0) {
+        requireTools = false;
+        continue;
+      }
       return choice.content ?? "Sorry, I didn't get a response. Please try again.";
     }
 
+    requireTools = false;
+
     for (const toolCall of toolCalls) {
       const fn = toolCall.function;
+      emitStatus(getToolStatusMessage(fn.name));
+
       let args: Record<string, string> = {};
       try {
         args = JSON.parse(fn.arguments);
@@ -49,8 +111,4 @@ export async function chat(userMessage: string, history: ChatCompletionMessagePa
   }
 
   return "Sorry, I ran into an issue processing your request. Please try again.";
-}
-
-export function createHistory(): ChatCompletionMessageParam[] {
-  return [];
 }

@@ -9,7 +9,7 @@ const DAY_MAP: Record<string, number> = {
   thursday: 4, friday: 5, saturday: 6,
 };
 
-function studioDateParts(date = new Date()) {
+export function studioDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: STUDIO_TIMEZONE,
     year: "numeric",

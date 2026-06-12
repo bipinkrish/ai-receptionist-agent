@@ -6,6 +6,7 @@
   "scripts": {
     "chat": "tsx src/chat.ts",
     "seed": "tsx scripts/seed-calendar.ts",
+    "reset": "tsx scripts/reset-all.ts",
     "test:calendar": "tsx scripts/test-calendar.ts",
     "test:sheets": "tsx scripts/test-sheets.ts",
     "verify:google": "tsx scripts/verify-google.ts"
