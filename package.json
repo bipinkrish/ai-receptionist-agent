@@ -1,0 +1,23 @@
+{
+  "name": "solstice-receptionist",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "chat": "tsx src/chat.ts",
+    "seed": "tsx scripts/seed-calendar.ts",
+    "test:calendar": "tsx scripts/test-calendar.ts",
+    "test:sheets": "tsx scripts/test-sheets.ts",
+    "verify:google": "tsx scripts/verify-google.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
+    "groq-sdk": "^0.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
