@@ -49,6 +49,7 @@ You do **not** have to use a JSON file. Pick one:
 |--------|--------|
 | **JSON file** (default) | `GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json` |
 | **Inline env vars** | Set `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (use `\n` for newlines in the key) |
+| **JSON env var** | Set `GOOGLE_SERVICE_ACCOUNT_JSON` to the full file contents (good for cloud hosts) |
 | **Application Default Credentials** | Omit file/inline vars; run `gcloud auth application-default login` locally |
 
 For production on GCP, [Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) is the usual approach — no key file at all.
@@ -84,17 +85,80 @@ npm run test:sheets     # append/update a test contact row
 
 ## Run the chat
 
+**CLI:**
 ```bash
 npm run chat
 ```
 
-Type messages at the `You:` prompt. Type `exit` to quit.
+**Web UI (showcase):**
+```bash
+npm run ui
+```
+Open http://localhost:3000 — set `PORT` in `.env` to change the port.
+
+## Deploy the web UI (GitHub Pages)
+
+GitHub Pages serves **static files only**. The chat UI still needs the Node API running somewhere (e.g. [Render](https://render.com) using `render.yaml` in this repo).
+
+### 1. Host the API
+
+On Render (or similar):
+
+1. Create a **Web Service** from this repo.
+2. Set **Start command** to `npm run ui`.
+3. Add environment variables (see table below).
+4. Set `CORS_ORIGIN` to your GitHub Pages URL, e.g. `https://YOUR_USER.github.io` (or `https://YOUR_USER.github.io/REPO_NAME` for project pages).
+5. Copy the public API URL (e.g. `https://solstice-receptionist-api.onrender.com`).
+
+### 2. Enable GitHub Pages
+
+1. Repo **Settings → Pages → Build and deployment → Source**: **GitHub Actions**.
+2. Add repository secrets (**Settings → Secrets and variables → Actions → New repository secret**):
+
+| Secret | Value |
+|--------|--------|
+| `API_BASE_URL` | Your hosted API URL (no trailing slash), e.g. `https://solstice-receptionist-api.onrender.com` |
+
+Push to `main` (or run the **Deploy UI to GitHub Pages** workflow manually). The site will be at `https://YOUR_USER.github.io/REPO_NAME/`.
+
+The GitHub workflow only deploys static HTML — **no Google or Groq secrets belong in GitHub**. Those go on your API host (Render, etc.).
+
+### Google service account JSON on the API host
+
+You never commit the JSON file. On **Render** (or wherever the API runs), add it as an environment variable:
+
+1. Open `service-account.json` in a text editor.
+2. Copy the **entire file** (from `{` through `}`).
+3. In Render → your service → **Environment**:
+   - Key: `GOOGLE_SERVICE_ACCOUNT_JSON`
+   - Value: paste the raw JSON
+
+The app reads `GOOGLE_SERVICE_ACCOUNT_JSON` directly (`src/google-auth.ts`).
+
+**Alternative — split fields** (if your host prefers separate vars):
+
+| Variable | Value |
+|----------|--------|
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | `receptionist@project.iam.gserviceaccount.com` |
+| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Full key including `-----BEGIN PRIVATE KEY-----` lines; use `\n` for line breaks in a single line |
+
+### API env vars checklist (Render / hosting)
+
+| Variable | Required |
+|----------|----------|
+| `GROQ_API_KEY` | Yes |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Yes (or email + private key) |
+| `CALENDAR_ID` | Yes |
+| `SHEET_ID` | Yes |
+| `STUDIO_TIMEZONE` | Yes |
+| `CORS_ORIGIN` | Yes when UI is on GitHub Pages |
 
 ## Project structure
 
 ```
 src/
   chat.ts           CLI entrypoint
+  server.ts         Web UI server
   agent.ts          Groq tool-calling loop
   policy.ts         System prompt
   google-auth.ts    Service account clients

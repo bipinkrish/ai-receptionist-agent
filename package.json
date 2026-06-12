@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "chat": "tsx src/chat.ts",
+    "ui": "tsx src/server.ts",
+    "build:pages": "node scripts/prepare-pages.mjs",
     "seed": "tsx scripts/seed-calendar.ts",
     "reset": "tsx scripts/reset-all.ts",
     "test:calendar": "tsx scripts/test-calendar.ts",

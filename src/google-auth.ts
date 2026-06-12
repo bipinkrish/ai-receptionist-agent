@@ -22,6 +22,11 @@ function loadCredentials(): JWTInput | undefined {
     };
   }
 
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  if (json) {
+    return JSON.parse(json) as JWTInput;
+  }
+
   const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
   if (keyPath) {
     return JSON.parse(readFileSync(resolve(keyPath), "utf-8"));

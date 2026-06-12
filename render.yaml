@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: solstice-receptionist-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run ui
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: STUDIO_TIMEZONE
+        value: America/Los_Angeles
+      - key: CALENDAR_ID
+        sync: false
+      - key: SHEET_ID
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
