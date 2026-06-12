@@ -224,11 +224,7 @@
       const input = document.getElementById("input");
       const sendBtn = document.getElementById("send");
       const themeToggle = document.getElementById("theme-toggle");
-      const API_BASE = (() => {
-        const raw = window.__API_BASE__ || "";
-        if (raw === "__API_BASE_URL__") return "";
-        return raw.replace(/\/$/, "");
-      })();
+      const API_BASE = window.__API_BASE__;
 
       let sessionId = null;
       let busy = false;
