@@ -44,17 +44,54 @@ const EXCLUDED_NAME_WORDS = new Set([
   "session",
 ]);
 
-const NAME_GIVEN_REGEX =
-  /\b(?:my name is|i am|i'm|this is|name'?s?|call me)\s+[a-z][a-z' -]{1,}/i;
+const SPOKEN_DIGIT_WORDS: Record<string, string> = {
+  zero: "0",
+  oh: "0",
+  o: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
 
+const SPOKEN_DIGIT_WORD_SET = new Set(Object.keys(SPOKEN_DIGIT_WORDS));
+
+const NAME_GIVEN_REGEX =
+  /\b(?:my name is|i am|i'm|this is|name'?s?|call me)\s+([a-z][a-z' -]{1,})/i;
+
+/** Parse numeric digits and spoken digit words (voice: "two three three…"). */
 export function normalizePhoneDigits(phone: string): string {
-  return phone.replace(/\D/g, "");
+  const fromChars = phone.replace(/\D/g, "");
+
+  const spoken: string[] = [];
+  const tokens = phone.toLowerCase().match(/\b(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|\d+)\b/g) ?? [];
+  for (const token of tokens) {
+    if (/^\d+$/.test(token)) {
+      spoken.push(...token.split(""));
+      continue;
+    }
+    const digit = SPOKEN_DIGIT_WORDS[token];
+    if (digit) spoken.push(digit);
+  }
+
+  const fromSpeech = spoken.join("");
+  return fromSpeech.length > fromChars.length ? fromSpeech : fromChars;
 }
 
 export function formatPhoneDisplay(digits: string): string {
   const d = digits.slice(-10);
-  if (d.length !== 10) return digits;
-  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  if (d.length === 10) {
+    return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  if (d.length === 7) {
+    return `${d.slice(0, 3)}-${d.slice(3)}`;
+  }
+  return digits;
 }
 
 export function validateCallerPhone(phone: string): {
@@ -64,16 +101,13 @@ export function validateCallerPhone(phone: string): {
   message?: string;
 } {
   const digits = normalizePhoneDigits(phone);
-  if (digits.length < 10) {
-    return { valid: false, message: "Ask for their 10-digit phone number before proceeding." };
+  if (digits.length < 7) {
+    return { valid: false, message: "Could you share your phone number?" };
   }
 
-  const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits.slice(-10);
-  if (/^0+$/.test(normalized) || normalized === "1234567890" || normalized === "5555555555") {
-    return {
-      valid: false,
-      message: "Need a real phone number from the caller — do not use placeholders.",
-    };
+  const normalized = digits.length >= 10 ? digits.slice(-10) : digits;
+  if (/^0+$/.test(normalized)) {
+    return { valid: false, message: "Could you share your phone number?" };
   }
 
   return {
@@ -83,6 +117,20 @@ export function validateCallerPhone(phone: string): {
   };
 }
 
+function isSpokenDigitName(name: string): boolean {
+  const words = name.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+
+  const digitWords = words.filter((word) => SPOKEN_DIGIT_WORD_SET.has(word));
+  if (digitWords.length === 0) return false;
+
+  // "Nine Zero", "Two Three Three", etc. — phone digits misheard as a name
+  if (digitWords.length === words.length) return true;
+  if (words.length <= 3 && digitWords.length >= 1) return true;
+
+  return false;
+}
+
 export function validateCallerName(name: string): {
   valid: boolean;
   normalized?: string;
@@ -90,14 +138,18 @@ export function validateCallerName(name: string): {
 } {
   const trimmed = name.trim().replace(/\s+/g, " ");
   if (trimmed.length < 2) {
-    return { valid: false, message: "Ask for their full name before proceeding." };
+    return { valid: false, message: "May I have your first and last name?" };
   }
 
   const lower = trimmed.toLowerCase();
   if (PLACEHOLDER_NAMES.has(lower)) {
+    return { valid: false, message: "May I have your first and last name?" };
+  }
+
+  if (isSpokenDigitName(trimmed)) {
     return {
       valid: false,
-      message: "Need the caller's real name — ask for it before booking.",
+      message: "That sounds like part of a phone number — may I have your first and last name?",
     };
   }
 
@@ -106,7 +158,7 @@ export function validateCallerName(name: string): {
       trimmed,
     )
   ) {
-    return { valid: false, message: "That does not look like a name — ask for their full name." };
+    return { valid: false, message: "May I have your first and last name?" };
   }
 
   return { valid: true, normalized: trimmed };
@@ -133,13 +185,20 @@ export function validateBookingIdentity(
   };
 }
 
+function nameFromExplicitIntro(transcript: string): boolean {
+  const match = transcript.match(NAME_GIVEN_REGEX);
+  if (!match?.[1]) return false;
+  return !isSpokenDigitName(match[1].trim());
+}
+
 /** Heuristic: has the caller given their name anywhere in the conversation? */
 export function transcriptHasCallerName(transcript: string, userMessage: string): boolean {
-  if (NAME_GIVEN_REGEX.test(transcript)) return true;
+  if (nameFromExplicitIntro(transcript)) return true;
 
   const trimmed = userMessage.trim();
   if (!trimmed || trimmed.length > 40) return false;
   if (/\d/.test(trimmed)) return false;
+  if (isSpokenDigitName(trimmed)) return false;
   if (/^(yes|yeah|yep|no|nope|ok|okay|thanks|thank you|bye|goodbye)\b/i.test(trimmed)) {
     return false;
   }
@@ -148,6 +207,7 @@ export function transcriptHasCallerName(transcript: string, userMessage: string)
   // Short name-only reply (e.g. assistant asked "What's your name?" → "Sarah Chen")
   if (/^[a-z][a-z' -]{1,38}$/i.test(trimmed) && trimmed.split(/\s+/).length <= 4) {
     const words = trimmed.toLowerCase().split(/\s+/);
+    if (words.some((word) => SPOKEN_DIGIT_WORD_SET.has(word))) return false;
     if (!words.some((word) => EXCLUDED_NAME_WORDS.has(word))) {
       return true;
     }
@@ -159,4 +219,12 @@ export function transcriptHasCallerName(transcript: string, userMessage: string)
 export function isUsablePhone(value: string | undefined): boolean {
   if (!value) return false;
   return validateCallerPhone(value).valid;
+}
+
+export function transcriptHasPhone(transcript: string): boolean {
+  if (/\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/.test(transcript)) return true;
+  if (/\b\d{7,}\b/.test(transcript.replace(/\s/g, ""))) return true;
+
+  const digits = normalizePhoneDigits(transcript);
+  return digits.length >= 7;
 }

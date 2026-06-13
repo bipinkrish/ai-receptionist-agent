@@ -53,13 +53,13 @@ const bookSlotTool = {
   function: {
     name: "bookSlot",
     description:
-      "Book a 30-minute session. REQUIRES the caller's real full name and 10-digit phone collected in this conversation first — never placeholders. Updates calendar and contact log together.",
+      "Book a 30-minute session. Requires caller's first and last name (not phone digits) and phone number (any format). Updates calendar and contact log together.",
     parameters: {
       type: "object",
       properties: {
         dateTime: { type: "string", description: "Exact dateTime from a tool response" },
-        callerName: { type: "string", description: "Caller's full name as they stated it" },
-        callerPhone: { type: "string", description: "Caller's 10-digit phone number as they stated it" },
+        callerName: { type: "string", description: "Caller's first and last name" },
+        callerPhone: { type: "string", description: "Phone number — digits or spoken words are fine" },
       },
       required: ["dateTime", "callerName", "callerPhone"],
     },

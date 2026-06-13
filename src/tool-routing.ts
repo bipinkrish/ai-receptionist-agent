@@ -4,9 +4,9 @@ import {
   contactToolDefinitions,
   loggingToolDefinitions,
 } from "./tools/index.js";
-import { transcriptHasCallerName } from "./tools/caller-identity.js";
+import { transcriptHasCallerName, transcriptHasPhone } from "./tools/caller-identity.js";
 
-const PHONE_REGEX = /\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b|\b555[-\s]?[A-Z0-9-]+\b/i;
+const PHONE_REGEX = /\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b|\b\d{7,}\b|\b555[-\s]?[A-Z0-9-]+\b/i;
 const DAY_REGEX = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
 const TIME_REGEX = /\b(\d{1,2}(:\d{2})?\s*(am|pm))\b/i;
 const SCHEDULING_REGEX =
@@ -86,7 +86,7 @@ function detectIntent(history: HistoryMessage[], userMessage: string): Conversat
   const lastAssistant = lastAssistantMessage(history);
 
   return {
-    hasPhone: PHONE_REGEX.test(transcript),
+    hasPhone: PHONE_REGEX.test(transcript) || transcriptHasPhone(transcript),
     hasName: transcriptHasCallerName(transcript, userMessage),
     hasDay: DAY_REGEX.test(userMessage) || DAY_REGEX.test(transcript),
     hasTime: TIME_REGEX.test(userMessage),
@@ -217,7 +217,7 @@ export function getActiveTools(
   return deduped.length > 0 ? deduped : undefined;
 }
 
-const SCHEDULING_POLICY = `\nScheduling: collect FULL NAME and PHONE from caller before bookSlot — never book without both. Then listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
+const SCHEDULING_POLICY = `\nScheduling: ask for first AND last name (not phone digits). Collect phone number in any format — digits or spoken. Then listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 
