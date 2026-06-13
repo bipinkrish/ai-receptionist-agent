@@ -30,6 +30,8 @@ jobs:
       - name: Build static UI
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          VAPI_PUBLIC_KEY: ${{ secrets.VAPI_PUBLIC_KEY }}
+          VAPI_ASSISTANT_ID: ${{ secrets.VAPI_ASSISTANT_ID }}
         run: node scripts/prepare-pages.mjs
 
       - uses: actions/configure-pages@v5

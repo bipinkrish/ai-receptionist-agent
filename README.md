@@ -90,79 +90,147 @@ npm run test:sheets     # append/update a test contact row
 npm run chat
 ```
 
-**Web UI (showcase):**
+## Scripts
+
+| Command | Use |
+|---------|-----|
+| `npm run ui` | **Local dev** — API + serves `public/index.html` at http://localhost:3000 |
+| `npm run tools` | **Backend (Koyeb)** — API only, no static files |
+| `npm run chat` | CLI text chat |
+| `npm run vapi:assistant` | Create/update Vapi assistant (run once after backend is live) |
+| `npm run build:pages` | Build static HTML for GitHub Pages (used by CI) |
+
+**Local dev:**
 ```bash
 npm run ui
 ```
-Open http://localhost:3000 — set `PORT` in `.env` to change the port.
+Open http://localhost:3000 — choose **Text** or **Voice**.
 
+**Backend routes** (both `ui` and `tools`):
 
-### 1. Host the API
+| Route | Purpose |
+|-------|---------|
+| `POST /api/session`, `/api/chat` | Text chat |
+| `POST /vapi/tools` | Vapi tool webhook |
+| `GET /health` | Health check |
 
+## Voice (Vapi web call)
 
-1. Create a **Web Service** from this repo.
-2. Set **Start command** to `npm run ui`.
-3. Add environment variables (see table below).
-4. Set `CORS_ORIGIN` to your GitHub Pages URL, e.g. `https://YOUR_USER.github.io` (or `https://YOUR_USER.github.io/REPO_NAME` for project pages).
-5. Copy the public API URL.
+Phase 2 adds browser voice via [Vapi](https://vapi.ai). Vapi handles STT, Groq LLM, and TTS; tool calls hit the same backend as text chat (`POST /vapi/tools`).
 
-### 2. Enable GitHub Pages
+### Setup
 
-1. Repo **Settings → Pages → Build and deployment → Source**: **GitHub Actions**.
-2. Add repository secrets (**Settings → Secrets and variables → Actions → New repository secret**):
+1. Add to `.env`:
+   ```
+   VAPI_PRIVATE_KEY=...
+   VAPI_PUBLIC_KEY=...
+   API_BASE_URL=https://your-app.koyeb.app   # after deploying backend
+   ```
 
-| Secret | Value |
-|--------|--------|
-| `API_BASE_URL` | Your hosted API URL (no trailing slash) |
+2. Deploy backend with `npm run tools` on Koyeb (see Deploy section), then create the Vapi assistant:
+   ```bash
+   npm run vapi:assistant
+   ```
+   Uses `API_BASE_URL/vapi/tools` as the tool webhook. Copy the printed ID → `VAPI_ASSISTANT_ID`.
 
-Push to `main` (or run the **Deploy UI to GitHub Pages** workflow manually). The site will be at `https://YOUR_USER.github.io/REPO_NAME/`.
+3. Re-run `npm run vapi:assistant` after setting `VAPI_ASSISTANT_ID` to PATCH instead of create.
 
-The GitHub workflow only deploys static HTML — **no Google or Groq secrets belong in GitHub**. Those go on your API host.
+4. Open the site (local or GitHub Pages) and pick **Voice**.
 
-### Google service account JSON on the API host
+### Latency tuning notes
 
+After a test call, check the Vapi call log for where time is spent:
 
-1. Open `service-account.json` in a text editor.
-2. Copy the **entire file** (from `{` through `}`).
-3. In Host → your service → **Environment**:
-   - Key: `GOOGLE_SERVICE_ACCOUNT_JSON`
-   - Value: paste the raw JSON
+| Stage | Typical bottleneck | Tuning |
+|-------|-------------------|--------|
+| User speech → text | Deepgram `nova-2` | Already a fast transcriber |
+| LLM + tool decision | Groq `llama-4-scout` | Trim `SYSTEM_POLICY`; reduce tool count per turn |
+| Tool execution | Google Calendar/Sheets API | Usually 200–800ms; Vapi speaks default filler ("One moment") while waiting |
+| Text → speech | Vapi voice (`Elliot`) | Swap `voice.provider` / `voiceId` in `create-assistant.ts` if needed |
 
-The app reads `GOOGLE_SERVICE_ACCOUNT_JSON` directly (`src/google-auth.ts`).
+## Deploy (Koyeb backend + GitHub Pages frontend)
 
-**Alternative — split fields** (if your host prefers separate vars):
+```
+GitHub Pages (static public/index.html)
+        │
+        ├── Text  → POST /api/chat  ──┐
+        └── Voice → Vapi cloud       │
+                                     ▼
+                          Koyeb: npm run tools
+                          (API only, no HTML)
+```
+
+### Step 1 — Backend on Koyeb
+
+1. Create an app from this repo on [Koyeb](https://www.koyeb.com).
+2. **Run command:** `npm run tools`
+3. Add environment variables:
 
 | Variable | Value |
 |----------|--------|
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | `receptionist@project.iam.gserviceaccount.com` |
-| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Full key including `-----BEGIN PRIVATE KEY-----` lines; use `\n` for line breaks in a single line |
+| `GROQ_API_KEY` | Your Groq key |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full service account JSON |
+| `CALENDAR_ID` | Your calendar ID |
+| `SHEET_ID` | Your sheet ID |
+| `STUDIO_TIMEZONE` | e.g. `America/Los_Angeles` |
+| `CORS_ORIGIN` | `https://YOUR_USER.github.io` |
 
-### API env vars checklist (hosting)
+4. Deploy and copy the public URL (e.g. `https://solstice-receptionist-xxx.koyeb.app`).
 
-| Variable | Required |
-|----------|----------|
-| `GROQ_API_KEY` | Yes |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Yes (or email + private key) |
-| `CALENDAR_ID` | Yes |
-| `SHEET_ID` | Yes |
-| `STUDIO_TIMEZONE` | Yes |
-| `CORS_ORIGIN` | Yes when UI is on GitHub Pages |
+### Step 2 — Vapi assistant
+
+On your machine, set `API_BASE_URL` to the Koyeb URL in `.env`, then:
+
+```bash
+npm run vapi:assistant
+```
+
+Copy the printed assistant ID. Add to:
+- `.env` locally as `VAPI_ASSISTANT_ID`
+- Koyeb env vars (optional, not used at runtime)
+- GitHub secrets (Step 3)
+
+Re-run `npm run vapi:assistant` after setting `VAPI_ASSISTANT_ID` to update instead of create.
+
+### Step 3 — Frontend on GitHub Pages
+
+1. Repo **Settings → Pages → Build and deployment → Source:** **GitHub Actions**.
+2. Add repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+|--------|--------|
+| `API_BASE_URL` | Koyeb URL, no trailing slash |
+| `VAPI_PUBLIC_KEY` | Vapi public key |
+| `VAPI_ASSISTANT_ID` | From Step 2 |
+
+3. Push to `main`. The workflow runs `build:pages`, injects secrets into `public/index.html`, and deploys the static file.
+
+Site URL: `https://YOUR_USER.github.io/REPO_NAME/`
+
+No Google/Groq secrets in GitHub — those stay on Koyeb only.
 
 ## Project structure
 
 ```
+public/
+  index.html              Text + Voice UI (deployed to GitHub Pages)
 src/
-  chat.ts           CLI entrypoint
-  server.ts         Web UI server
-  agent.ts          Groq tool-calling loop
-  policy.ts         System prompt
-  google-auth.ts    Service account clients
+  chat.ts                 CLI entrypoint
+  server.ts               All backend routes (text API + Vapi tools)
+  agent.ts                Groq tool-calling loop
+  policy.ts               System prompt
+  google-auth.ts          Service account clients
+  vapi/
+    create-assistant.ts   One-off Vapi assistant setup
+    handle-tool-calls.ts  Vapi webhook handler
+    tools.ts              Tool defs → Vapi format
   tools/
-    index.ts        Tool schemas + dispatcher
-    calendar.ts     Availability, booking, reschedule
-    sheets.ts       Contact logging
+    index.ts              Tool schemas + runTool()
+    calendar.ts           Availability, booking, reschedule
+    sheets.ts             Contact logging
 scripts/
-  seed-calendar.ts  Test event seeder
+  prepare-pages.mjs       Builds static UI for GitHub Pages
+  seed-calendar.ts        Test event seeder
 ```
 
 ## Booking model & timezone

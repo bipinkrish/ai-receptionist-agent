@@ -6,6 +6,8 @@
   "scripts": {
     "chat": "tsx src/chat.ts",
     "ui": "tsx src/server.ts",
+    "tools": "SERVE_STATIC=false tsx src/server.ts",
+    "vapi:assistant": "tsx src/vapi/create-assistant.ts",
     "build:pages": "node scripts/prepare-pages.mjs",
     "seed": "tsx scripts/seed-calendar.ts",
     "reset": "tsx scripts/reset-all.ts",

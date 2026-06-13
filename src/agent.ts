@@ -14,7 +14,7 @@ import {
   shouldRequireTools,
 } from "./tool-routing.js";
 
-const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+export const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const MAX_TOOL_ROUNDS = 8;
 
 const OPENING_GREETING =

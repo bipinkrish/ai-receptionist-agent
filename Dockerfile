@@ -11,4 +11,4 @@ ENV NODE_ENV=production
 ENV PORT=10000
 EXPOSE ${PORT}
 
-CMD ["npm", "run", "ui"]
+CMD ["npm", "run", "tools"]

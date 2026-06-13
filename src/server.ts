@@ -6,10 +6,13 @@ import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "groq-sdk/resources/chat/completions";
 import { chat, createHistory, getOpeningGreeting } from "./agent.js";
+import { handleVapiToolCalls, type VapiToolCallsBody } from "./vapi/handle-tool-calls.js";
+import { injectAppConfig } from "../scripts/inject-config.mjs";
 
 dotenv.config();
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN;
+const SERVE_STATIC = process.env.SERVE_STATIC !== "false";
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PUBLIC = join(ROOT, "public");
@@ -45,16 +48,20 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-async function serveStatic(
-  req: IncomingMessage,
-  pathname: string,
-  res: ServerResponse,
-): Promise<boolean> {
-  const filePath = join(PUBLIC, pathname === "/" ? "index.html" : pathname);
-  if (!filePath.startsWith(PUBLIC)) {
-    sendJson(req, res, 403, { error: "Forbidden" });
-    return true;
-  }
+async function serveIndex(res: ServerResponse): Promise<void> {
+  const raw = await readFile(join(PUBLIC, "index.html"), "utf-8");
+  const html = injectAppConfig(raw, {
+    apiBase: "",
+    vapiPublicKey: process.env.VAPI_PUBLIC_KEY ?? "",
+    vapiAssistantId: process.env.VAPI_ASSISTANT_ID ?? "",
+  });
+  res.writeHead(200, { "Content-Type": "text/html" });
+  res.end(html);
+}
+
+async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
+  const filePath = join(PUBLIC, pathname);
+  if (!filePath.startsWith(PUBLIC)) return false;
   try {
     const data = await readFile(filePath);
     const ext = extname(filePath);
@@ -73,6 +80,33 @@ const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS" && pathname.startsWith("/api/")) {
     res.writeHead(204, corsHeaders(req));
     res.end();
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/health") {
+    sendJson(req, res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/vapi/tools") {
+    let body: VapiToolCallsBody;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      sendJson(req, res, 200, { results: [] });
+      return;
+    }
+
+    console.log("[vapi/tools]", JSON.stringify(body, null, 2));
+
+    if (body.message?.type !== "tool-calls") {
+      sendJson(req, res, 200, { ok: true });
+      return;
+    }
+
+    const payload = await handleVapiToolCalls(body);
+    console.log("[vapi/tools] response", JSON.stringify(payload));
+    sendJson(req, res, 200, payload);
     return;
   }
 
@@ -125,13 +159,24 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET") {
-    const served = await serveStatic(req, pathname, res);
-    if (served) return;
+    if (SERVE_STATIC && (pathname === "/" || pathname === "/index.html")) {
+      try {
+        await serveIndex(res);
+        return;
+      } catch {
+        sendJson(req, res, 404, { error: "Not found" });
+        return;
+      }
+    }
+    if (SERVE_STATIC && (await serveStatic(pathname, res))) return;
   }
 
   sendJson(req, res, 404, { error: "Not found" });
 });
 
 server.listen(PORT, () => {
-  console.log(`Solstice receptionist UI → http://localhost:${PORT}`);
+  const mode = SERVE_STATIC ? "ui (API + static)" : "tools (API only)";
+  console.log(`Solstice receptionist [${mode}] → http://localhost:${PORT}`);
+  console.log(`  text chat  POST /api/session, /api/chat`);
+  console.log(`  vapi tools POST /vapi/tools`);
 });
