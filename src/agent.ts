@@ -15,13 +15,20 @@ import {
   shouldRequireTools,
 } from "./tool-routing.js";
 
-export const MODEL = "openai/gpt-oss-120b:free";
+const USE_OPENROUTER = process.env.LLM_PROVIDER === "openrouter";
+
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-120b:free";
+
+export const MODEL = USE_OPENROUTER ? OPENROUTER_MODEL : GROQ_MODEL;
 const MAX_TOOL_ROUNDS = 6;
 const MAX_TOKENS = 120;
 
-const groq = new Groq({
-  apiKey: process.env.OPENROUTER_API_KEY ?? process.env.GROQ_API_KEY,
-  baseURL: process.env.OPENROUTER_API_KEY
+const llm = new Groq({
+  apiKey: USE_OPENROUTER
+    ? process.env.OPENROUTER_API_KEY
+    : process.env.GROQ_API_KEY,
+  baseURL: USE_OPENROUTER
     ? "https://openrouter.ai/api/v1"
     : undefined,
 });
@@ -32,7 +39,7 @@ async function callGroq(
   toolChoice: "auto" | "required",
   extraSystem = "",
 ) {
-  return groq.chat.completions.create({
+  return llm.chat.completions.create({
     model: MODEL,
     temperature: 0.3,
     max_tokens: MAX_TOKENS,
