@@ -358,10 +358,26 @@ export async function findBookings(phone: string): Promise<{
   return { bookings };
 }
 
+export type BookingEventSnapshot = {
+  summary: string;
+  description: string;
+  startDateTime: string;
+  endDateTime: string;
+};
+
 async function findBookingEvent(
   callerPhone: string,
   dateTime: string,
-): Promise<{ id?: string | null; start?: { dateTime?: string | null } } | undefined> {
+): Promise<
+  | {
+      id?: string | null;
+      summary?: string | null;
+      description?: string | null;
+      start?: { dateTime?: string | null };
+      end?: { dateTime?: string | null };
+    }
+  | undefined
+> {
   const needle = callerPhone.replace(/\D/g, "");
   const events = await listEventsOnDate(studioDateFromDateTime(dateTime));
   return events.find(
@@ -372,10 +388,43 @@ async function findBookingEvent(
   );
 }
 
+function snapshotFromEvent(event: {
+  summary?: string | null;
+  description?: string | null;
+  start?: { dateTime?: string | null };
+  end?: { dateTime?: string | null };
+}): BookingEventSnapshot | undefined {
+  if (!event.start?.dateTime || !event.end?.dateTime) return undefined;
+  return {
+    summary: event.summary ?? "Session",
+    description: event.description ?? "",
+    startDateTime: event.start.dateTime,
+    endDateTime: event.end.dateTime,
+  };
+}
+
+export async function restoreBookingEvent(snapshot: BookingEventSnapshot): Promise<void> {
+  await calendar.events.insert({
+    calendarId: CALENDAR_ID,
+    requestBody: {
+      summary: snapshot.summary,
+      description: snapshot.description,
+      start: { dateTime: snapshot.startDateTime, timeZone: STUDIO_TIMEZONE },
+      end: { dateTime: snapshot.endDateTime, timeZone: STUDIO_TIMEZONE },
+    },
+  });
+}
+
 export async function cancelBooking(
   callerPhone: string,
   dateTime: string,
-): Promise<{ success: boolean; message: string; displayTime?: string }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  displayTime?: string;
+  callerName?: string;
+  snapshot?: BookingEventSnapshot;
+}> {
   const event = await findBookingEvent(callerPhone, dateTime);
 
   if (!event?.id) {
@@ -385,6 +434,8 @@ export async function cancelBooking(
   const displayTime = event.start?.dateTime
     ? formatDisplayTime(event.start.dateTime)
     : formatDisplayTime(dateTime);
+  const snapshot = snapshotFromEvent(event);
+  const callerName = (event.summary ?? "").replace(/^Session:\s*/i, "").trim() || undefined;
 
   await calendar.events.delete({ calendarId: CALENDAR_ID, eventId: event.id });
 
@@ -392,6 +443,8 @@ export async function cancelBooking(
     success: true,
     message: `Cancelled session on ${displayTime}.`,
     displayTime,
+    callerName,
+    snapshot,
   };
 }
 

@@ -6,10 +6,20 @@ export type VapiFunctionTool = {
   server: { url: string };
 };
 
+export type VapiEndCallTool = {
+  type: "endCall";
+};
+
+export type VapiAssistantTool = VapiFunctionTool | VapiEndCallTool;
+
 export function buildVapiTools(serverUrl: string): VapiFunctionTool[] {
   return toolDefinitions.map((tool) => ({
     type: "function" as const,
     function: tool.function,
     server: { url: serverUrl },
   }));
+}
+
+export function buildAssistantTools(serverUrl: string): VapiAssistantTool[] {
+  return [...buildVapiTools(serverUrl), { type: "endCall" as const }];
 }

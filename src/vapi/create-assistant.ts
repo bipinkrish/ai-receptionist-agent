@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { MODEL } from "../agent.js";
 import { VOICE_POLICY, VOICE_FIRST_MESSAGE } from "../policy.js";
-import { buildVapiTools } from "./tools.js";
+import { buildAssistantTools } from "./tools.js";
 
 dotenv.config();
 
@@ -77,7 +77,7 @@ function buildAssistantPayload() {
       model: MODEL,
       maxTokens: 120,
       messages: [{ role: "system", content: VOICE_POLICY }],
-      tools: buildVapiTools(toolServerUrl!),
+      tools: buildAssistantTools(toolServerUrl!),
     },
     transcriber: {
       provider: "deepgram",

@@ -1,11 +1,9 @@
+import { bookSession, cancelSession, rescheduleSession } from "./booking-flow.js";
 import {
-  bookSlot,
-  cancelBooking,
   checkSlot,
   findBookings,
   getStudioBusinessHours,
   listAvailableSlots,
-  rescheduleBooking,
 } from "./calendar.js";
 import { findContact, logContact } from "./sheets.js";
 
@@ -54,7 +52,8 @@ const bookSlotTool = {
   type: "function" as const,
   function: {
     name: "bookSlot",
-    description: "Book a 30-minute session. Use the exact dateTime from listAvailableSlots or checkSlot.",
+    description:
+      "Book a 30-minute session. Updates calendar and contact log together. Use exact dateTime from listAvailableSlots or checkSlot.",
     parameters: {
       type: "object",
       properties: {
@@ -86,7 +85,8 @@ const rescheduleBookingTool = {
   type: "function" as const,
   function: {
     name: "rescheduleBooking",
-    description: "Move an existing booking to a new slot. Verify the new slot with checkSlot first.",
+    description:
+      "Move an existing booking to a new slot. Updates calendar and contact log together. Verify the new slot with checkSlot first.",
     parameters: {
       type: "object",
       properties: {
@@ -105,7 +105,7 @@ const cancelBookingTool = {
   function: {
     name: "cancelBooking",
     description:
-      "Cancel an existing booking by deleting the calendar event. Use dateTime from findBookings. Call before saying it is cancelled.",
+      "Cancel an existing booking. Updates calendar and contact log together. Use dateTime from findBookings. Call before saying it is cancelled.",
     parameters: {
       type: "object",
       properties: {
@@ -134,7 +134,8 @@ const logContactTool = {
   type: "function" as const,
   function: {
     name: "logContact",
-    description: "Log or update a caller in the Contacts sheet. Call before saying goodbye.",
+    description:
+      "Log or update a caller in the Contacts sheet for call wrap-up. Book/cancel/reschedule are logged automatically — use this for general call notes before goodbye.",
     parameters: {
       type: "object",
       properties: {
@@ -177,15 +178,20 @@ export async function runTool(name: string, args: Record<string, string>): Promi
     case "checkSlot":
       return JSON.stringify(await checkSlot(args.dayOfWeek, args.time));
     case "bookSlot":
-      return JSON.stringify(await bookSlot(args.dateTime, args.callerName, args.callerPhone));
+      return JSON.stringify(await bookSession(args.dateTime, args.callerName, args.callerPhone));
     case "findBookings":
       return JSON.stringify(await findBookings(args.phone));
     case "rescheduleBooking":
       return JSON.stringify(
-        await rescheduleBooking(args.callerPhone, args.fromDateTime, args.toDateTime, args.callerName),
+        await rescheduleSession(
+          args.callerPhone,
+          args.fromDateTime,
+          args.toDateTime,
+          args.callerName,
+        ),
       );
     case "cancelBooking":
-      return JSON.stringify(await cancelBooking(args.callerPhone, args.dateTime));
+      return JSON.stringify(await cancelSession(args.callerPhone, args.dateTime));
     case "findContact":
       return JSON.stringify((await findContact(args.phone)) ?? { found: false });
     case "logContact":

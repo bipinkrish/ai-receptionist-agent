@@ -1,5 +1,6 @@
 import { runTool } from "../tools/index.js";
 import { compactToolResult } from "../compact-tool-result.js";
+import { scheduleEndCall } from "./end-call.js";
 
 export type VapiToolCall = {
   id: string;
@@ -10,6 +11,7 @@ export type VapiToolCall = {
 export type VapiToolCallsBody = {
   message?: {
     type?: string;
+    call?: { id?: string };
     toolCallList?: unknown[];
     toolCalls?: unknown[];
     toolWithToolCallList?: unknown[];
@@ -112,17 +114,32 @@ function normalizeArgs(params: Record<string, unknown> | undefined): Record<stri
   return args;
 }
 
+function logContactSucceeded(output: string): boolean {
+  try {
+    const parsed = JSON.parse(output) as { success?: boolean };
+    return parsed.success === true;
+  } catch {
+    return output.toLowerCase().includes("logged");
+  }
+}
+
 export async function handleVapiToolCalls(body: VapiToolCallsBody) {
   const toolCalls = extractToolCalls(body);
+  const callId = body.message?.call?.id;
   const results = [];
 
   for (const call of toolCalls) {
     try {
       const output = await runTool(call.name, normalizeArgs(call.parameters));
+      const result = toSingleLine(compactToolResult(call.name, output));
       results.push({
         toolCallId: call.id,
-        result: toSingleLine(compactToolResult(call.name, output)),
+        result,
       });
+
+      if (call.name === "logContact" && callId && logContactSucceeded(result)) {
+        scheduleEndCall(callId);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Tool execution failed";
       results.push({ toolCallId: call.id, error: toSingleLine(message) });
