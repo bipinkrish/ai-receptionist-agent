@@ -297,7 +297,7 @@ export async function bookSlot(
   }
 
   const slotCheck = await checkSlot(
-    day,
+    validation.dayOfWeek,
     formatTimeFromParts(validation.hour, validation.minute),
   );
   if (!slotCheck.available) {
@@ -309,15 +309,27 @@ export async function bookSlot(
 
   const endDateTime = addMinutesToDateTime(slotCheck.dateTime, SLOT_MINUTES);
 
-  await calendar.events.insert({
-    calendarId: CALENDAR_ID,
-    requestBody: {
-      summary: `Session: ${callerName}`,
-      description: `Phone: ${callerPhone}\nBooked via receptionist`,
-      start: { dateTime: slotCheck.dateTime, timeZone: STUDIO_TIMEZONE },
-      end: { dateTime: endDateTime, timeZone: STUDIO_TIMEZONE },
-    },
-  });
+  try {
+    await calendar.events.insert({
+      calendarId: CALENDAR_ID,
+      requestBody: {
+        summary: `Session: ${callerName}`,
+        description: `Phone: ${callerPhone}\nBooked via receptionist`,
+        start: { dateTime: slotCheck.dateTime, timeZone: STUDIO_TIMEZONE },
+        end: { dateTime: endDateTime, timeZone: STUDIO_TIMEZONE },
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Calendar insert failed";
+    console.error("[calendar] bookSlot insert failed:", message);
+    return { success: false, message: "Could not book that slot on the calendar. Please try again." };
+  }
+
+  const verified = await bookingEventExists(callerPhone, slotCheck.dateTime);
+  if (!verified) {
+    console.error("[calendar] bookSlot insert not found after create:", slotCheck.dateTime);
+    return { success: false, message: "Calendar booking could not be confirmed. Please try again." };
+  }
 
   return {
     success: true,
@@ -367,6 +379,11 @@ export async function findBookings(phone: string): Promise<{
     }));
 
   return { bookings };
+}
+
+export async function bookingEventExists(callerPhone: string, dateTime: string): Promise<boolean> {
+  const event = await findBookingEvent(callerPhone, dateTime);
+  return Boolean(event?.id);
 }
 
 export type BookingEventSnapshot = {

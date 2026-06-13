@@ -1,5 +1,6 @@
 import {
   bookSlot as bookCalendarSlot,
+  bookingEventExists,
   cancelBooking as cancelCalendarBooking,
   type BookingEventSnapshot,
   restoreBookingEvent,
@@ -25,16 +26,20 @@ async function syncContactLog(params: {
   outcome: string;
   notes: string;
   sessionDate?: string;
+  allowBookingTopic?: boolean;
 }): Promise<{ success: boolean; message: string }> {
   try {
-    return await logContact({
-      name: params.name,
-      phone: params.phone,
-      date: params.sessionDate ?? todayStudioDate(),
-      topic: params.topic,
-      outcome: params.outcome,
-      notes: params.notes,
-    });
+    return await logContact(
+      {
+        name: params.name,
+        phone: params.phone,
+        date: params.sessionDate ?? todayStudioDate(),
+        topic: params.topic,
+        outcome: params.outcome,
+        notes: params.notes,
+      },
+      { allowBookingTopic: params.allowBookingTopic },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Sheet update failed";
     console.error("[booking-flow] contact log failed:", message);
@@ -74,6 +79,11 @@ export async function bookSession(
   if (!calendarResult.success) return calendarResult;
 
   const bookedDateTime = calendarResult.dateTime ?? dateTime;
+  const onCalendar = await bookingEventExists(identity.callerPhone, bookedDateTime);
+  if (!onCalendar) {
+    return { success: false, message: "Calendar booking could not be confirmed. Please try again." };
+  }
+
   const sheetResult = await syncContactLog({
     name: identity.callerName,
     phone: identity.callerPhone,
@@ -81,6 +91,7 @@ export async function bookSession(
     topic: "Session booking",
     outcome: "Booked",
     notes: calendarResult.message,
+    allowBookingTopic: true,
   });
 
   if (sheetResult.success) return calendarResult;
@@ -115,6 +126,7 @@ export async function cancelSession(
     topic: "Session cancellation",
     outcome: "Cancelled",
     notes: calendarResult.message,
+    allowBookingTopic: true,
   });
 
   if (sheetResult.success) return calendarResult;
@@ -170,6 +182,7 @@ export async function rescheduleSession(
     topic: "Session reschedule",
     outcome: "Rescheduled",
     notes: `Moved from ${fromDateTime} to ${toDateTime}. ${calendarResult.message}`,
+    allowBookingTopic: true,
   });
 
   if (sheetResult.success) return calendarResult;

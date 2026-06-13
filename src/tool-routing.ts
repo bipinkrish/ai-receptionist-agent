@@ -225,7 +225,7 @@ const RESCHEDULE_POLICY = `\nReschedule: findBookings first, verify new slot, th
 
 const CANCEL_POLICY = `\nCancel: findBookings → cancelBooking. Confirm only after tool succeeds.`;
 
-const LOGGING_POLICY = `\nCall logContact silently before goodbye for call summary (book/cancel/reschedule auto-logged). Date YYYY-MM-DD.`;
+const LOGGING_POLICY = `\nCall logContact silently before goodbye for general call notes only — never topic "Session booking". Book/cancel/reschedule auto-logged. Date YYYY-MM-DD.`;
 
 /** Extra system instructions based on which tools are active this turn. */
 export function schedulingPolicyAddon(tools: ChatCompletionTool[] | undefined): string {

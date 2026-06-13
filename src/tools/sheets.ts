@@ -111,10 +111,26 @@ export async function clearContactsSheet(): Promise<number> {
   return dataRows;
 }
 
-export async function logContact(contact: ContactRow): Promise<{ success: boolean; message: string }> {
+const BOOKING_LOG_TOPICS = new Set([
+  "session booking",
+  "session cancellation",
+  "session reschedule",
+]);
+
+export async function logContact(
+  contact: ContactRow,
+  options?: { allowBookingTopic?: boolean },
+): Promise<{ success: boolean; message: string }> {
   await ensureContactsHeader();
 
   const normalized = normalizeContact(contact);
+  if (!options?.allowBookingTopic && BOOKING_LOG_TOPICS.has(normalized.topic.toLowerCase())) {
+    return {
+      success: false,
+      message:
+        "Booking status is logged automatically by bookSlot, cancelBooking, or rescheduleBooking — use logContact only for general call notes.",
+    };
+  }
   const existing = await findContact(normalized.phone);
   const notes = existing ? appendContactNotes(existing.data.notes, normalized) : normalized.notes;
   const values = [
