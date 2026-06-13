@@ -121,7 +121,9 @@ function calendarToolsForIntent(intent: ConversationIntent): ChatCompletionTool[
     return pickTools(calendarToolDefinitions, ["getBusinessHours"]);
   }
 
-  names.push("getBusinessHours");
+  if (intent.wantsHours) {
+    names.push("getBusinessHours");
+  }
 
   if (intent.hasDay || intent.wantsScheduling || intent.pendingConfirm || intent.wantsReschedule) {
     names.push("listAvailableSlots", "checkSlot");
@@ -209,40 +211,15 @@ export function getActiveTools(
   return deduped.length > 0 ? deduped : undefined;
 }
 
-const SCHEDULING_POLICY = `
+const SCHEDULING_POLICY = `\nScheduling: use listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
 
-ACTIVE TOOLS: scheduling
-- Call listAvailableSlots when you know the day. Use the summary field — do NOT read out every slot.
-- If openings exist, ask what time works for them. Only list specific times if they ask.
-- Call checkSlot when they name a time. Never invent times.
-- bookSlot needs exact dateTime from a tool response. Call it before saying they're booked.
-- Keep replies to 1-2 sentences. No bullet lists.`;
+const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 
-const HOURS_POLICY = `
+const RESCHEDULE_POLICY = `\nReschedule: findBookings first, verify new slot, then rescheduleBooking.`;
 
-ACTIVE TOOL: getBusinessHours
-- Call only because the caller asked about hours. Answer briefly — do not mention hours unprompted.`;
+const CANCEL_POLICY = `\nCancel: findBookings → cancelBooking. Confirm only after tool succeeds.`;
 
-const RESCHEDULE_POLICY = `
-
-ACTIVE TOOLS: rescheduling
-- Call findBookings with the caller's phone first.
-- Verify the new slot with checkSlot or listAvailableSlots before rescheduleBooking.
-- Pass exact dateTime strings from tool responses.`;
-
-const CANCEL_POLICY = `
-
-ACTIVE TOOLS: cancellation
-- Call findBookings to locate the booking, then cancelBooking with the exact dateTime.
-- Never say a booking is cancelled until cancelBooking returns success.
-- Do NOT call bookSlot for cancellations.`;
-
-const LOGGING_POLICY = `
-
-ACTIVE TOOL: logContact
-- Call logContact silently before goodbye — no need to mention it to the caller.
-- date must be YYYY-MM-DD (today). notes: one short line, e.g. "Cancelled Sat 9:30am session".
-- Prior notes are appended on new lines automatically.`;
+const LOGGING_POLICY = `\nCall logContact silently before goodbye. Date YYYY-MM-DD.`;
 
 /** Extra system instructions based on which tools are active this turn. */
 export function schedulingPolicyAddon(tools: ChatCompletionTool[] | undefined): string {

@@ -4,8 +4,9 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
 } from "groq-sdk/resources/chat/completions";
-import { SYSTEM_POLICY } from "./policy.js";
+import { SYSTEM_POLICY, OPENING_GREETING } from "./policy.js";
 import { runTool } from "./tools/index.js";
+import { compactToolResult } from "./compact-tool-result.js";
 import {
   getActiveTools,
   getToolStatusMessage,
@@ -15,12 +16,8 @@ import {
 } from "./tool-routing.js";
 
 export const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const MAX_TOOL_ROUNDS = 8;
-
-const OPENING_GREETING =
-  "Hi, thanks for calling Solstice Pilates! How can I help you today?";
-
-export type ChatStatusCallback = (message: string) => void;
+const MAX_TOOL_ROUNDS = 6;
+const MAX_TOKENS = 120;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -32,6 +29,7 @@ async function callGroq(
 ) {
   return groq.chat.completions.create({
     model: MODEL,
+    max_tokens: MAX_TOKENS,
     messages: [{ role: "system", content: SYSTEM_POLICY + extraSystem }, ...history],
     ...(tools?.length ? { tools, tool_choice: toolChoice } : {}),
   });
@@ -44,6 +42,8 @@ export function createHistory(): ChatCompletionMessageParam[] {
 export function getOpeningGreeting(): string {
   return OPENING_GREETING;
 }
+
+export type ChatStatusCallback = (message: string) => void;
 
 export async function chat(
   userMessage: string,
@@ -100,7 +100,7 @@ export async function chat(
         args = {};
       }
 
-      const result = await runTool(fn.name, args);
+      const result = compactToolResult(fn.name, await runTool(fn.name, args));
       const toolMessage: ChatCompletionToolMessageParam = {
         role: "tool",
         tool_call_id: toolCall.id,

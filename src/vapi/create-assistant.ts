@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { MODEL } from "../agent.js";
-import { SYSTEM_POLICY } from "../policy.js";
+import { VOICE_POLICY, VOICE_FIRST_MESSAGE } from "../policy.js";
 import { buildVapiTools } from "./tools.js";
 
 dotenv.config();
@@ -71,24 +71,32 @@ async function ensureGroqCredential() {
 function buildAssistantPayload() {
   return {
     name: "Solstice Pilates Receptionist",
-    firstMessage: "Hi, thanks for calling Solstice Pilates, how can I help?",
+    firstMessage: VOICE_FIRST_MESSAGE,
     model: {
       provider: "groq",
       model: MODEL,
-      messages: [{ role: "system", content: SYSTEM_POLICY }],
+      maxTokens: 120,
+      messages: [{ role: "system", content: VOICE_POLICY }],
       tools: buildVapiTools(toolServerUrl!),
     },
-    // Groq is used for LLM only (BYO key via ensureGroqCredential).
-    // Vapi does not support Groq STT/TTS — use Vapi voice + Deepgram transcriber.
     transcriber: {
       provider: "deepgram",
-      model: "nova-2",
-      language: "en",
+      model: "nova-2-phonecall",
+      language: "en-US",
+      smartFormat: true,
+      keywords: [
+        "Solstice:3",
+        "Pilates:3",
+        "reschedule:2",
+        "cancel:2",
+        "session:2",
+        "booking:2",
+        "minutes:2",
+      ],
     },
-    // Vapi-hosted voice — no third-party TTS credentials needed.
     voice: {
       provider: "vapi",
-      voiceId: "Elliot",
+      voiceId: "Emma",
     },
     server: {
       url: toolServerUrl,

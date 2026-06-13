@@ -1,4 +1,5 @@
 import { runTool } from "../tools/index.js";
+import { compactToolResult } from "../compact-tool-result.js";
 
 export type VapiToolCall = {
   id: string;
@@ -51,7 +52,7 @@ export async function handleVapiToolCalls(body: VapiToolCallsBody) {
   for (const call of toolCalls) {
     try {
       const output = await runTool(call.name, normalizeArgs(call.parameters));
-      results.push({ toolCallId: call.id, result: toSingleLine(output) });
+      results.push({ toolCallId: call.id, result: toSingleLine(compactToolResult(call.name, output)) });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Tool execution failed";
       results.push({ toolCallId: call.id, error: toSingleLine(message) });
