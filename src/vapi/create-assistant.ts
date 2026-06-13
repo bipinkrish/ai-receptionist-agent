@@ -11,6 +11,7 @@ const apiBase = process.env.API_BASE_URL?.replace(/\/$/, "");
 const toolServerUrl =
   process.env.TOOL_SERVER_URL ?? (apiBase ? `${apiBase}/vapi/tools` : undefined);
 const assistantId = process.env.VAPI_ASSISTANT_ID;
+const openrouterApiKey = process.env.OPENROUTER_API_KEY;
 const groqApiKey = process.env.GROQ_API_KEY;
 
 if (!privateKey) {
@@ -47,9 +48,9 @@ async function vapiFetch(path: string, init: RequestInit = {}) {
   return data as Record<string, unknown>;
 }
 
-async function ensureGroqCredential() {
-  if (!groqApiKey) {
-    console.warn("GROQ_API_KEY not set — assuming Groq is configured in the Vapi dashboard.");
+async function ensureOpenRouterCredential() {
+  if (!openrouterApiKey) {
+    console.warn("OPENROUTER_API_KEY not set — assuming OpenRouter is configured in the Vapi dashboard.");
     return;
   }
 
@@ -57,14 +58,14 @@ async function ensureGroqCredential() {
     await vapiFetch("/credential", {
       method: "POST",
       body: JSON.stringify({
-        provider: "groq",
-        apiKey: groqApiKey,
-        name: "solstice-groq",
+        provider: "openrouter",
+        apiKey: openrouterApiKey,
+        name: "solstice-openrouter",
       }),
     });
-    console.log("Groq credential added to Vapi.");
+    console.log("OpenRouter credential added to Vapi.");
   } catch (err) {
-    console.warn("Groq credential step skipped:", err instanceof Error ? err.message : err);
+    console.warn("OpenRouter credential step skipped:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -73,10 +74,10 @@ function buildAssistantPayload() {
     name: "Solstice Pilates Receptionist",
     firstMessage: VOICE_FIRST_MESSAGE,
     model: {
-      provider: "groq",
+      provider: "openrouter",
       model: MODEL,
       temperature: 0.2,
-      maxTokens: 60,
+      maxTokens: 80,
       messages: [
         { role: "system", content: buildSystemPrompt(VOICE_POLICY) },
       ],
@@ -109,7 +110,7 @@ function buildAssistantPayload() {
 }
 
 async function main() {
-  await ensureGroqCredential();
+  await ensureOpenRouterCredential();
 
   const payload = buildAssistantPayload();
 

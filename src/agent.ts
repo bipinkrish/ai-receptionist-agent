@@ -15,11 +15,16 @@ import {
   shouldRequireTools,
 } from "./tool-routing.js";
 
-export const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+export const MODEL = "openai/gpt-oss-120b:free";
 const MAX_TOOL_ROUNDS = 6;
 const MAX_TOKENS = 120;
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({
+  apiKey: process.env.OPENROUTER_API_KEY ?? process.env.GROQ_API_KEY,
+  baseURL: process.env.OPENROUTER_API_KEY
+    ? "https://openrouter.ai/api/v1"
+    : undefined,
+});
 
 async function callGroq(
   history: ChatCompletionMessageParam[],
