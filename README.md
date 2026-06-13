@@ -137,17 +137,6 @@ Phase 2 adds browser voice via [Vapi](https://vapi.ai). Vapi handles STT, Groq L
 
 4. Open the site (local or GitHub Pages) and pick **Voice**.
 
-### Latency tuning notes
-
-After a test call, check the Vapi call log for where time is spent:
-
-| Stage | Typical bottleneck | Tuning |
-|-------|-------------------|--------|
-| User speech → text | Deepgram `nova-2` | Already a fast transcriber |
-| LLM + tool decision | Groq `llama-4-scout` | Trim `SYSTEM_POLICY`; reduce tool count per turn |
-| Tool execution | Google Calendar/Sheets API | Usually 200–800ms; Vapi speaks default filler ("One moment") while waiting |
-| Text → speech | Vapi voice (`Elliot`) | Swap `voice.provider` / `voiceId` in `create-assistant.ts` if needed |
-
 ## Deploy (Koyeb backend + GitHub Pages frontend)
 
 ```

@@ -79,16 +79,6 @@ function buildAssistantPayload() {
       maxTokens: 60,
       messages: [
         { role: "system", content: buildSystemPrompt(VOICE_POLICY) },
-        { role: "user", content: "Hi, my name is Sarah Chen." },
-        { role: "assistant", content: "Hi Sarah! Would you like to book, cancel, or reschedule a session?" },
-        { role: "user", content: "I'd like to book a class on Saturday." },
-        { role: "assistant", content: "Sure! What time on Saturday works best for you?" },
-        { role: "user", content: "How much is a class?" },
-        {
-          role: "assistant",
-          content:
-            "I'm not able to help with that on this line, but someone from the studio will call you back soon. Have a good day!",
-        },
       ],
       tools: buildAssistantTools(toolServerUrl!),
     },

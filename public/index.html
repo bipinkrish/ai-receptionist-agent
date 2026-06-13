@@ -250,32 +250,84 @@
       /* Voice */
       #voice-view {
         align-items: center;
-        justify-content: center;
-        padding: 32px 24px;
+        padding: 20px 24px 16px;
         text-align: center;
-        gap: 24px;
+        gap: 12px;
+      }
+
+      .voice-top {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
       }
 
       .voice-ring {
-        width: 120px;
-        height: 120px;
+        width: 80px;
+        height: 80px;
         border-radius: 50%;
         background: var(--card-bg);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 3rem;
+        font-size: 2rem;
         transition: box-shadow 0.3s;
       }
 
       .voice-ring.active {
-        box-shadow: 0 0 0 8px var(--card-bg), 0 0 0 12px var(--accent);
+        box-shadow: 0 0 0 6px var(--card-bg), 0 0 0 10px var(--accent);
       }
 
       #status {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         color: var(--text-muted);
         min-height: 1.4em;
+      }
+
+      .voice-transcript {
+        flex: 1;
+        width: 100%;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-height: 0;
+        padding: 4px 0;
+      }
+
+      .voice-transcript:empty::after {
+        content: "Transcript will appear here during the call";
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-style: italic;
+        margin-top: 24px;
+      }
+
+      .voice-transcript .msg {
+        max-width: 85%;
+        padding: 8px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        text-align: left;
+      }
+
+      .voice-transcript .msg.agent {
+        align-self: flex-start;
+        background: var(--bg-agent);
+        border-bottom-left-radius: 4px;
+      }
+
+      .voice-transcript .msg.user {
+        align-self: flex-end;
+        background: var(--bg-user);
+        color: var(--text-user);
+        border-bottom-right-radius: 4px;
+      }
+
+      .voice-transcript .msg.partial {
+        opacity: 0.6;
       }
 
       .voice-actions {
@@ -283,6 +335,7 @@
         gap: 12px;
         width: 100%;
         max-width: 280px;
+        flex-shrink: 0;
       }
 
       .voice-actions button {
@@ -340,8 +393,11 @@
       </div>
 
       <div id="voice-view" class="view hidden">
-        <div class="voice-ring" id="voice-ring">🎙️</div>
-        <div id="status">Tap Start Call — allow mic when prompted</div>
+        <div class="voice-top">
+          <div class="voice-ring" id="voice-ring">🎙️</div>
+          <div id="status">Tap Start Call — allow mic when prompted</div>
+        </div>
+        <div class="voice-transcript" id="voice-transcript"></div>
         <div class="voice-actions">
           <button type="button" id="start-call">Start Call</button>
           <button type="button" id="end-call" disabled>End Call</button>
@@ -461,6 +517,43 @@
       let vapi = null;
       const startBtn = document.getElementById("start-call");
       const endBtn = document.getElementById("end-call");
+      const transcriptEl = document.getElementById("voice-transcript");
+      let partialBubble = null;
+
+      function addTranscriptMsg(text, role, isPartial) {
+        if (isPartial) {
+          if (partialBubble && partialBubble.dataset.role === role) {
+            partialBubble.textContent = text;
+          } else {
+            finalizePartial();
+            partialBubble = document.createElement("div");
+            partialBubble.className = `msg ${role === "user" ? "user" : "agent"} partial`;
+            partialBubble.dataset.role = role;
+            partialBubble.textContent = text;
+            transcriptEl.appendChild(partialBubble);
+          }
+        } else {
+          if (partialBubble && partialBubble.dataset.role === role) {
+            partialBubble.textContent = text;
+            partialBubble.classList.remove("partial");
+            partialBubble = null;
+          } else {
+            finalizePartial();
+            const el = document.createElement("div");
+            el.className = `msg ${role === "user" ? "user" : "agent"}`;
+            el.textContent = text;
+            transcriptEl.appendChild(el);
+          }
+        }
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      }
+
+      function finalizePartial() {
+        if (partialBubble) {
+          partialBubble.classList.remove("partial");
+          partialBubble = null;
+        }
+      }
 
       async function initVapi() {
         if (vapi) return vapi;
@@ -477,6 +570,8 @@
           voiceRing.classList.add("active");
           startBtn.disabled = true;
           endBtn.disabled = false;
+          transcriptEl.innerHTML = "";
+          partialBubble = null;
         });
 
         vapi.on("call-end", () => {
@@ -484,10 +579,18 @@
           voiceRing.classList.remove("active");
           startBtn.disabled = false;
           endBtn.disabled = true;
+          finalizePartial();
         });
 
         vapi.on("speech-start", () => { statusEl.textContent = "Assistant speaking…"; });
         vapi.on("speech-end", () => { statusEl.textContent = "Listening…"; });
+
+        vapi.on("message", (msg) => {
+          if (msg.type === "transcript") {
+            const role = msg.role === "assistant" ? "assistant" : "user";
+            addTranscriptMsg(msg.transcript, role, msg.transcriptType === "partial");
+          }
+        });
 
         vapi.on("error", (err) => {
           console.error(err);
