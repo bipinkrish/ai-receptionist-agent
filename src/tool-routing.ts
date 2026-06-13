@@ -173,50 +173,16 @@ export function shouldRequireTools(userMessage: string, history: HistoryMessage[
   return false;
 }
 
-/** Return the minimal tool set needed for this turn, or undefined for text-only. */
+/** Return the tool set for this turn — always includes all tools so the model can call any. */
 export function getActiveTools(
   history: HistoryMessage[],
   userMessage: string,
 ): ChatCompletionTool[] | undefined {
-  const intent = detectIntent(history, userMessage);
-  const transcript = buildTranscript(history, userMessage);
-
-  // Pricing/hours in policy — no tools unless scheduling context
-  if (
-    intent.wantsPricing &&
-    !intent.wantsScheduling &&
-    !intent.hasDay &&
-    !intent.hasPhone &&
-    !intent.wantsHours
-  ) {
-    return undefined;
-  }
-
-  const tools: ChatCompletionTool[] = [];
-
-  tools.push(...calendarToolsForIntent(intent));
-
-  if (intent.hasName) {
-    tools.push(...contactToolDefinitions);
-    if (
-      intent.wantsScheduling ||
-      intent.wantsReschedule ||
-      intent.wantsCancel ||
-      /\b(my booking|existing booking|already book|upcoming session)\b/i.test(transcript)
-    ) {
-      tools.push(...pickTools(calendarToolDefinitions, ["findBookings"]));
-    }
-  }
-
-  if (
-    intent.hasName &&
-    (intent.isWrapUp || intent.wantsScheduling || intent.wantsReschedule || intent.wantsCancel)
-  ) {
-    tools.push(...loggingToolDefinitions);
-  }
-
-  const deduped = dedupeTools(tools);
-  return deduped.length > 0 ? deduped : undefined;
+  return [
+    ...calendarToolDefinitions,
+    ...contactToolDefinitions,
+    ...loggingToolDefinitions,
+  ];
 }
 
 const SCHEDULING_POLICY = `\nScheduling: identify callers by first+last name only. Phone only for first-time callers. NEVER ask returning callers to repeat their phone. Never ask for calendar dates — pass day name to listAvailableSlots/checkSlot. Ask what TIME works.`;
@@ -229,29 +195,10 @@ const CANCEL_POLICY = `\nCancel: name only → call findBookings FIRST (never gu
 
 const LOGGING_POLICY = `\nCall logContact silently before goodbye for general call notes only — never topic "Session booking". Book/cancel/reschedule auto-logged. Date YYYY-MM-DD.`;
 
-/** Extra system instructions based on which tools are active this turn. */
+/** Extra system instructions based on conversation intent. */
 export function schedulingPolicyAddon(tools: ChatCompletionTool[] | undefined): string {
   if (!tools?.length) return "";
-
-  const parts: string[] = [];
-
-  if (hasTool(tools, "getBusinessHours") && !hasTool(tools, "listAvailableSlots")) {
-    parts.push(HOURS_POLICY);
-  }
-  if (hasTool(tools, "listAvailableSlots") || hasTool(tools, "bookSlot")) {
-    parts.push(SCHEDULING_POLICY);
-  }
-  if (hasTool(tools, "rescheduleBooking")) {
-    parts.push(RESCHEDULE_POLICY);
-  }
-  if (hasTool(tools, "cancelBooking")) {
-    parts.push(CANCEL_POLICY);
-  }
-  if (hasTool(tools, "logContact")) {
-    parts.push(LOGGING_POLICY);
-  }
-
-  return parts.join("");
+  return [SCHEDULING_POLICY, HOURS_POLICY, RESCHEDULE_POLICY, CANCEL_POLICY, LOGGING_POLICY].join("");
 }
 
 const TOOL_STATUS_MESSAGES: Record<string, string> = {
