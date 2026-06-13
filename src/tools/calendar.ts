@@ -25,6 +25,7 @@ import {
   nextDateForDay,
   studioDateParts,
 } from "../studio-time.js";
+import { normalizeCallerNameKey } from "./caller-identity.js";
 
 export interface SlotInfo {
   dateTime: string;
@@ -325,7 +326,7 @@ export async function bookSlot(
     return { success: false, message: "Could not book that slot on the calendar. Please try again." };
   }
 
-  const verified = await bookingEventExists(callerPhone, slotCheck.dateTime);
+  const verified = await bookingEventExists(callerName, slotCheck.dateTime, callerPhone);
   if (!verified) {
     console.error("[calendar] bookSlot insert not found after create:", slotCheck.dateTime);
     return { success: false, message: "Calendar booking could not be confirmed. Please try again." };
@@ -351,7 +352,26 @@ function addMinutesToDateTime(dateTime: string, minutes: number): string {
   return `${datePart}T${minutesToClock(total)}:00`;
 }
 
-export async function findBookings(phone: string): Promise<{
+function eventMatchesCaller(
+  event: { summary?: string | null; description?: string | null },
+  callerName: string,
+  callerPhone?: string,
+): boolean {
+  const summaryName = (event.summary ?? "").replace(/^Session:\s*/i, "").trim();
+  if (normalizeCallerNameKey(summaryName) === normalizeCallerNameKey(callerName)) {
+    return true;
+  }
+  if (callerPhone) {
+    const needle = callerPhone.replace(/\D/g, "");
+    return needle.length > 0 && (event.description ?? "").replace(/\D/g, "").includes(needle);
+  }
+  return false;
+}
+
+export async function findBookings(
+  callerName: string,
+  callerPhone?: string,
+): Promise<{
   bookings: Array<{ dateTime: string; displayTime: string; summary: string }>;
 }> {
   const now = studioDateParts();
@@ -368,10 +388,8 @@ export async function findBookings(phone: string): Promise<{
     timeZone: STUDIO_TIMEZONE,
   });
 
-  const needle = phone.replace(/\D/g, "");
   const bookings = (events.data.items ?? [])
-    .filter((e) => (e.description ?? "").replace(/\D/g, "").includes(needle))
-    .filter((e) => e.start?.dateTime)
+    .filter((e) => e.start?.dateTime && eventMatchesCaller(e, callerName, callerPhone))
     .map((e) => ({
       dateTime: e.start!.dateTime!,
       displayTime: formatDisplayTime(e.start!.dateTime!),
@@ -381,8 +399,12 @@ export async function findBookings(phone: string): Promise<{
   return { bookings };
 }
 
-export async function bookingEventExists(callerPhone: string, dateTime: string): Promise<boolean> {
-  const event = await findBookingEvent(callerPhone, dateTime);
+export async function bookingEventExists(
+  callerName: string,
+  dateTime: string,
+  callerPhone?: string,
+): Promise<boolean> {
+  const event = await findBookingEvent(callerName, dateTime, callerPhone);
   return Boolean(event?.id);
 }
 
@@ -394,8 +416,9 @@ export type BookingEventSnapshot = {
 };
 
 async function findBookingEvent(
-  callerPhone: string,
+  callerName: string,
   dateTime: string,
+  callerPhone?: string,
 ): Promise<
   | {
       id?: string | null;
@@ -406,13 +429,12 @@ async function findBookingEvent(
     }
   | undefined
 > {
-  const needle = callerPhone.replace(/\D/g, "");
   const events = await listEventsOnDate(studioDateFromDateTime(dateTime));
   return events.find(
     (e) =>
       e.start?.dateTime &&
       studioMinutesFromDateTime(e.start.dateTime) === studioMinutesFromDateTime(dateTime) &&
-      (e.description ?? "").replace(/\D/g, "").includes(needle),
+      eventMatchesCaller(e, callerName, callerPhone),
   );
 }
 
@@ -444,26 +466,27 @@ export async function restoreBookingEvent(snapshot: BookingEventSnapshot): Promi
 }
 
 export async function cancelBooking(
-  callerPhone: string,
+  callerName: string,
   dateTime: string,
+  callerPhone?: string,
 ): Promise<{
   success: boolean;
   message: string;
   displayTime?: string;
-  callerName?: string;
+  eventCallerName?: string;
   snapshot?: BookingEventSnapshot;
 }> {
-  const event = await findBookingEvent(callerPhone, dateTime);
+  const event = await findBookingEvent(callerName, dateTime, callerPhone);
 
   if (!event?.id) {
-    return { success: false, message: "No booking found for that time and phone number." };
+    return { success: false, message: "No booking found for that name and time." };
   }
 
   const displayTime = event.start?.dateTime
     ? formatDisplayTime(event.start.dateTime)
     : formatDisplayTime(dateTime);
   const snapshot = snapshotFromEvent(event);
-  const callerName = (event.summary ?? "").replace(/^Session:\s*/i, "").trim() || undefined;
+  const eventCallerName = (event.summary ?? "").replace(/^Session:\s*/i, "").trim() || undefined;
 
   await calendar.events.delete({ calendarId: CALENDAR_ID, eventId: event.id });
 
@@ -471,25 +494,25 @@ export async function cancelBooking(
     success: true,
     message: `Cancelled session on ${displayTime}.`,
     displayTime,
-    callerName,
+    eventCallerName,
     snapshot,
   };
 }
 
 export async function rescheduleBooking(
-  callerPhone: string,
+  callerName: string,
   fromDateTime: string,
   toDateTime: string,
-  callerName: string,
+  callerPhone?: string,
 ): Promise<{ success: boolean; message: string }> {
-  const oldEvent = await findBookingEvent(callerPhone, fromDateTime);
+  const oldEvent = await findBookingEvent(callerName, fromDateTime, callerPhone);
 
   if (!oldEvent?.id) {
-    return { success: false, message: "No existing booking found for that time and phone number." };
+    return { success: false, message: "No existing booking found for that name and time." };
   }
 
   await calendar.events.delete({ calendarId: CALENDAR_ID, eventId: oldEvent.id });
-  return bookSlot(toDateTime, callerName, callerPhone);
+  return bookSlot(toDateTime, callerName, callerPhone ?? "");
 }
 
 // Re-export for tests

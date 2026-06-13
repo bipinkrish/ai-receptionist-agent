@@ -1,6 +1,6 @@
 import { runTool } from "../tools/index.js";
 import { compactToolResult } from "../compact-tool-result.js";
-import { isUsablePhone, validateCallerPhone } from "../tools/caller-identity.js";
+import { formatPhoneForEntry, isUsablePhone } from "../tools/caller-identity.js";
 import { scheduleEndCall } from "./end-call.js";
 
 export type VapiToolCall = {
@@ -134,7 +134,7 @@ function extractVapiCallerContext(body: VapiToolCallsBody): { phone?: string; na
   const phoneCandidate = customer.number ?? customer.phoneNumber;
   const phone =
     typeof phoneCandidate === "string" && isUsablePhone(phoneCandidate)
-      ? validateCallerPhone(phoneCandidate).display
+      ? formatPhoneForEntry(phoneCandidate)
       : undefined;
 
   const name = typeof customer.name === "string" ? customer.name.trim() : undefined;
@@ -158,9 +158,17 @@ function enrichToolArgs(
 
   const enriched = { ...args };
 
-  if (toolName === "findBookings") {
-    if (caller.phone && !isUsablePhone(enriched.phone ?? "")) {
+  if (toolName === "findBookings" || toolName === "cancelBooking") {
+    const nameKey = toolName === "findBookings" ? "callerName" : "callerName";
+    const existing = enriched[nameKey]?.trim() ?? "";
+    if (caller.name && (!existing || existing.toLowerCase() === "caller")) {
+      enriched[nameKey] = caller.name;
+    }
+    if (toolName === "findBookings" && caller.phone && !isUsablePhone(enriched.phone ?? "")) {
       enriched.phone = caller.phone;
+    }
+    if (toolName === "cancelBooking" && caller.phone && !isUsablePhone(enriched.callerPhone ?? "")) {
+      enriched.callerPhone = caller.phone;
     }
     return enriched;
   }

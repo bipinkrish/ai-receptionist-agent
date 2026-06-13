@@ -132,16 +132,16 @@ function calendarToolsForIntent(intent: ConversationIntent): ChatCompletionTool[
     names.push("listAvailableSlots", "checkSlot");
   }
 
-  if (intent.hasPhone && intent.hasName && (intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel) {
+  if (intent.hasName && (intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel) {
     names.push("bookSlot");
   }
 
   if (intent.wantsReschedule) {
     names.push("findBookings");
-    if (intent.hasPhone && intent.hasName) {
+    if (intent.hasName) {
       names.push("rescheduleBooking");
     }
-  } else if (intent.hasPhone && intent.wantsScheduling) {
+  } else if (intent.hasName && intent.wantsScheduling) {
     names.push("findBookings");
   }
 
@@ -159,7 +159,7 @@ export function shouldRequireTools(userMessage: string, history: HistoryMessage[
     return false;
   }
 
-  if (intent.pendingConfirm && intent.hasPhone && intent.hasName) return true;
+  if (intent.pendingConfirm && intent.hasName) return true;
   if (intent.hasDay && intent.hasTime) return true;
 
   if (PHONE_REGEX.test(trimmed) && /book|slot|session|phone|name|confirm|time|cancel/i.test(lastAssistant)) {
@@ -194,7 +194,7 @@ export function getActiveTools(
 
   tools.push(...calendarToolsForIntent(intent));
 
-  if (intent.hasPhone) {
+  if (intent.hasName) {
     tools.push(...contactToolDefinitions);
     if (
       intent.wantsScheduling ||
@@ -207,7 +207,7 @@ export function getActiveTools(
   }
 
   if (
-    intent.hasPhone &&
+    intent.hasName &&
     (intent.isWrapUp || intent.wantsScheduling || intent.wantsReschedule || intent.wantsCancel)
   ) {
     tools.push(...loggingToolDefinitions);
@@ -217,13 +217,13 @@ export function getActiveTools(
   return deduped.length > 0 ? deduped : undefined;
 }
 
-const SCHEDULING_POLICY = `\nScheduling: NEVER ask the caller for a calendar date. They say "Saturday" or "next Saturday" → pass "Saturday" to listAvailableSlots/checkSlot (tools resolve the date). Ask what TIME works, not what date. Collect name + phone before bookSlot.`;
+const SCHEDULING_POLICY = `\nScheduling: identify callers by first+last name only. Phone only for first-time callers. NEVER ask returning callers to repeat their phone. Never ask for calendar dates — pass day name to listAvailableSlots/checkSlot. Ask what TIME works.`;
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 
-const RESCHEDULE_POLICY = `\nReschedule: findBookings first, verify new slot, then rescheduleBooking.`;
+const RESCHEDULE_POLICY = `\nReschedule: findBookings by callerName, verify new slot, then rescheduleBooking.`;
 
-const CANCEL_POLICY = `\nCancel: findBookings → cancelBooking. Confirm only after tool succeeds.`;
+const CANCEL_POLICY = `\nCancel: findBookings by callerName → cancelBooking. Confirm only after tool succeeds.`;
 
 const LOGGING_POLICY = `\nCall logContact silently before goodbye for general call notes only — never topic "Session booking". Book/cancel/reschedule auto-logged. Date YYYY-MM-DD.`;
 
@@ -279,7 +279,7 @@ export function getWorkingStatusMessage(
     return TOOL_STATUS_MESSAGES.bookSlot;
   }
 
-  if ((intent.wantsCancel || intent.wantsReschedule) && PHONE_REGEX.test(trimmed)) {
+  if ((intent.wantsCancel || intent.wantsReschedule) && intent.hasName) {
     return TOOL_STATUS_MESSAGES.findBookings;
   }
 

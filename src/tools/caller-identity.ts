@@ -69,7 +69,9 @@ export function normalizePhoneDigits(phone: string): string {
   const fromChars = phone.replace(/\D/g, "");
 
   const spoken: string[] = [];
-  const tokens = phone.toLowerCase().match(/\b(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|\d+)\b/g) ?? [];
+  const tokens =
+    phone.toLowerCase().match(/\b(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|\d+)\b/g) ??
+    [];
   for (const token of tokens) {
     if (/^\d+$/.test(token)) {
       spoken.push(...token.split(""));
@@ -94,27 +96,20 @@ export function formatPhoneDisplay(digits: string): string {
   return digits;
 }
 
-export function validateCallerPhone(phone: string): {
-  valid: boolean;
-  normalized?: string;
-  display?: string;
-  message?: string;
-} {
-  const digits = normalizePhoneDigits(phone);
-  if (digits.length < 7) {
-    return { valid: false, message: "Could you share your phone number?" };
-  }
+/** Lenient phone formatting for sheet/calendar storage — not used to verify returning callers. */
+export function formatPhoneForEntry(phone: string): string | undefined {
+  const trimmed = phone.trim();
+  if (!trimmed) return undefined;
 
-  const normalized = digits.length >= 10 ? digits.slice(-10) : digits;
-  if (/^0+$/.test(normalized)) {
-    return { valid: false, message: "Could you share your phone number?" };
-  }
+  const digits = normalizePhoneDigits(trimmed);
+  if (digits.length >= 7) return formatPhoneDisplay(digits);
+  if (trimmed.length >= 7) return trimmed;
 
-  return {
-    valid: true,
-    normalized,
-    display: formatPhoneDisplay(normalized),
-  };
+  return undefined;
+}
+
+export function normalizeCallerNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function isSpokenDigitName(name: string): boolean {
@@ -124,7 +119,6 @@ function isSpokenDigitName(name: string): boolean {
   const digitWords = words.filter((word) => SPOKEN_DIGIT_WORD_SET.has(word));
   if (digitWords.length === 0) return false;
 
-  // "Nine Zero", "Two Three Three", etc. — phone digits misheard as a name
   if (digitWords.length === words.length) return true;
   if (words.length <= 3 && digitWords.length >= 1) return true;
 
@@ -138,6 +132,10 @@ export function validateCallerName(name: string): {
 } {
   const trimmed = name.trim().replace(/\s+/g, " ");
   if (trimmed.length < 2) {
+    return { valid: false, message: "May I have your first and last name?" };
+  }
+
+  if (trimmed.split(/\s+/).length < 2) {
     return { valid: false, message: "May I have your first and last name?" };
   }
 
@@ -164,34 +162,13 @@ export function validateCallerName(name: string): {
   return { valid: true, normalized: trimmed };
 }
 
-export function validateBookingIdentity(
-  name: string,
-  phone: string,
-): { success: true; callerName: string; callerPhone: string } | { success: false; message: string } {
-  const nameResult = validateCallerName(name);
-  if (!nameResult.valid) {
-    return { success: false, message: nameResult.message ?? "Name required." };
-  }
-
-  const phoneResult = validateCallerPhone(phone);
-  if (!phoneResult.valid) {
-    return { success: false, message: phoneResult.message ?? "Phone required." };
-  }
-
-  return {
-    success: true,
-    callerName: nameResult.normalized!,
-    callerPhone: phoneResult.display!,
-  };
-}
-
 function nameFromExplicitIntro(transcript: string): boolean {
   const match = transcript.match(NAME_GIVEN_REGEX);
   if (!match?.[1]) return false;
-  return !isSpokenDigitName(match[1].trim());
+  return validateCallerName(match[1].trim()).valid;
 }
 
-/** Heuristic: has the caller given their name anywhere in the conversation? */
+/** Heuristic: has the caller given their full name anywhere in the conversation? */
 export function transcriptHasCallerName(transcript: string, userMessage: string): boolean {
   if (nameFromExplicitIntro(transcript)) return true;
 
@@ -204,8 +181,7 @@ export function transcriptHasCallerName(transcript: string, userMessage: string)
   }
   if (/\b(am|pm)\b/i.test(trimmed)) return false;
 
-  // Short name-only reply (e.g. assistant asked "What's your name?" → "Sarah Chen")
-  if (/^[a-z][a-z' -]{1,38}$/i.test(trimmed) && trimmed.split(/\s+/).length <= 4) {
+  if (/^[a-z][a-z' -]{1,38}$/i.test(trimmed) && trimmed.split(/\s+/).length >= 2) {
     const words = trimmed.toLowerCase().split(/\s+/);
     if (words.some((word) => SPOKEN_DIGIT_WORD_SET.has(word))) return false;
     if (!words.some((word) => EXCLUDED_NAME_WORDS.has(word))) {
@@ -217,14 +193,10 @@ export function transcriptHasCallerName(transcript: string, userMessage: string)
 }
 
 export function isUsablePhone(value: string | undefined): boolean {
-  if (!value) return false;
-  return validateCallerPhone(value).valid;
+  return formatPhoneForEntry(value ?? "") !== undefined;
 }
 
 export function transcriptHasPhone(transcript: string): boolean {
   if (/\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/.test(transcript)) return true;
-  if (/\b\d{7,}\b/.test(transcript.replace(/\s/g, ""))) return true;
-
-  const digits = normalizePhoneDigits(transcript);
-  return digits.length >= 7;
+  return normalizePhoneDigits(transcript).length >= 7;
 }

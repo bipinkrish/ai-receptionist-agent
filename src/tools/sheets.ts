@@ -44,6 +44,35 @@ async function readAllRows(): Promise<string[][]> {
   return (res.data.values as string[][]) ?? [];
 }
 
+function normalizeContactName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export async function findContactByName(
+  name: string,
+): Promise<{ rowIndex: number; data: ContactRow } | null> {
+  const rows = await readAllRows();
+  const needle = normalizeContactName(name);
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (normalizeContactName(row[0] ?? "") === needle) {
+      return {
+        rowIndex: i + 1,
+        data: {
+          name: row[0] ?? "",
+          phone: row[1] ?? "",
+          date: row[2] ?? "",
+          topic: row[3] ?? "",
+          outcome: row[4] ?? "",
+          notes: row[5] ?? "",
+        },
+      };
+    }
+  }
+  return null;
+}
+
 export async function findContact(phone: string): Promise<{ rowIndex: number; data: ContactRow } | null> {
   const rows = await readAllRows();
   const needle = normalizePhone(phone);
@@ -131,11 +160,13 @@ export async function logContact(
         "Booking status is logged automatically by bookSlot, cancelBooking, or rescheduleBooking — use logContact only for general call notes.",
     };
   }
-  const existing = await findContact(normalized.phone);
+  const existingByPhone = normalized.phone ? await findContact(normalized.phone) : null;
+  const existing = existingByPhone ?? (await findContactByName(normalized.name));
+  const phone = existing?.data.phone || normalized.phone;
   const notes = existing ? appendContactNotes(existing.data.notes, normalized) : normalized.notes;
   const values = [
     normalized.name,
-    normalized.phone,
+    phone,
     normalized.date,
     normalized.topic,
     normalized.outcome,

@@ -5,7 +5,7 @@ import {
   getStudioBusinessHours,
   listAvailableSlots,
 } from "./calendar.js";
-import { findContact, logContact } from "./sheets.js";
+import { findContactByName, logContact } from "./sheets.js";
 
 const getBusinessHoursTool = {
   type: "function" as const,
@@ -62,10 +62,13 @@ const bookSlotTool = {
       type: "object",
       properties: {
         dateTime: { type: "string", description: "Exact dateTime from a tool response" },
-        callerName: { type: "string", description: "Caller's first and last name" },
-        callerPhone: { type: "string", description: "Phone number — digits or spoken words are fine" },
+        callerName: { type: "string", description: "Caller's first and last name — used to identify them" },
+        callerPhone: {
+          type: "string",
+          description: "Phone number — only required for first-time callers; omit for returning callers",
+        },
       },
-      required: ["dateTime", "callerName", "callerPhone"],
+      required: ["dateTime", "callerName"],
     },
   },
 };
@@ -74,13 +77,14 @@ const findBookingsTool = {
   type: "function" as const,
   function: {
     name: "findBookings",
-    description: "Find upcoming session bookings for a phone number.",
+    description: "Find upcoming session bookings by caller's full name. Returning callers are identified by name only.",
     parameters: {
       type: "object",
       properties: {
-        phone: { type: "string" },
+        callerName: { type: "string", description: "Caller's first and last name" },
+        phone: { type: "string", description: "Optional — only if already known from sheet" },
       },
-      required: ["phone"],
+      required: ["callerName"],
     },
   },
 };
@@ -94,12 +98,15 @@ const rescheduleBookingTool = {
     parameters: {
       type: "object",
       properties: {
-        callerPhone: { type: "string" },
-        callerName: { type: "string" },
+        callerPhone: {
+          type: "string",
+          description: "Optional — only for first-time callers; returning callers identified by name",
+        },
+        callerName: { type: "string", description: "Caller's first and last name" },
         fromDateTime: { type: "string", description: "Current booking dateTime from findBookings" },
         toDateTime: { type: "string", description: "New slot dateTime from listAvailableSlots or checkSlot" },
       },
-      required: ["callerPhone", "callerName", "fromDateTime", "toDateTime"],
+      required: ["callerName", "fromDateTime", "toDateTime"],
     },
   },
 };
@@ -113,10 +120,14 @@ const cancelBookingTool = {
     parameters: {
       type: "object",
       properties: {
-        callerPhone: { type: "string" },
+        callerName: { type: "string", description: "Caller's first and last name" },
+        callerPhone: {
+          type: "string",
+          description: "Optional — only for first-time callers",
+        },
         dateTime: { type: "string", description: "Exact dateTime from findBookings" },
       },
-      required: ["callerPhone", "dateTime"],
+      required: ["callerName", "dateTime"],
     },
   },
 };
@@ -125,11 +136,11 @@ const findContactTool = {
   type: "function" as const,
   function: {
     name: "findContact",
-    description: "Look up an existing contact by phone number.",
+    description: "Look up a returning caller by full name to see if they are in the system.",
     parameters: {
       type: "object",
-      properties: { phone: { type: "string" } },
-      required: ["phone"],
+      properties: { name: { type: "string", description: "First and last name" } },
+      required: ["name"],
     },
   },
 };
@@ -182,22 +193,24 @@ export async function runTool(name: string, args: Record<string, string>): Promi
     case "checkSlot":
       return JSON.stringify(await checkSlot(args.dayOfWeek, args.time));
     case "bookSlot":
-      return JSON.stringify(await bookSession(args.dateTime, args.callerName, args.callerPhone));
+      return JSON.stringify(
+        await bookSession(args.dateTime, args.callerName, args.callerPhone),
+      );
     case "findBookings":
-      return JSON.stringify(await findBookings(args.phone));
+      return JSON.stringify(await findBookings(args.callerName, args.phone));
     case "rescheduleBooking":
       return JSON.stringify(
         await rescheduleSession(
-          args.callerPhone,
+          args.callerName,
           args.fromDateTime,
           args.toDateTime,
-          args.callerName,
+          args.callerPhone,
         ),
       );
     case "cancelBooking":
-      return JSON.stringify(await cancelSession(args.callerPhone, args.dateTime));
+      return JSON.stringify(await cancelSession(args.callerName, args.dateTime, args.callerPhone));
     case "findContact":
-      return JSON.stringify((await findContact(args.phone)) ?? { found: false });
+      return JSON.stringify((await findContactByName(args.name)) ?? { found: false });
     case "logContact":
       return JSON.stringify(
         await logContact({

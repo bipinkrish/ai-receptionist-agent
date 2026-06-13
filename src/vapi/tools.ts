@@ -11,6 +11,7 @@ const VOICE_TOOL_NAMES = new Set([
   "findBookings",
   "cancelBooking",
   "rescheduleBooking",
+  "findContact",
   "logContact",
 ]);
 
