@@ -25,7 +25,7 @@ import {
   nextDateForDay,
   studioDateParts,
 } from "../studio-time.js";
-import { normalizeCallerNameKey } from "./caller-identity.js";
+import { normalizeCallerNameKey, namesMatch } from "./caller-identity.js";
 
 export interface SlotInfo {
   dateTime: string;
@@ -291,7 +291,7 @@ export async function bookSlot(
   dateTime: string,
   callerName: string,
   callerPhone: string,
-): Promise<{ success: boolean; message: string; dateTime?: string }> {
+): Promise<{ success: boolean; message: string; dateTime?: string; displayTime?: string }> {
   const validation = validateSessionSlot(dateTime);
   if (!validation.valid) {
     return { success: false, message: validation.reason ?? "That slot is not available." };
@@ -336,6 +336,7 @@ export async function bookSlot(
     success: true,
     message: `Booked ${callerName} for ${slotCheck.displayTime}.`,
     dateTime: slotCheck.dateTime,
+    displayTime: slotCheck.displayTime,
   };
 }
 
@@ -358,7 +359,7 @@ function eventMatchesCaller(
   callerPhone?: string,
 ): boolean {
   const summaryName = (event.summary ?? "").replace(/^Session:\s*/i, "").trim();
-  if (normalizeCallerNameKey(summaryName) === normalizeCallerNameKey(callerName)) {
+  if (namesMatch(callerName, summaryName)) {
     return true;
   }
   if (callerPhone) {
@@ -368,11 +369,30 @@ function eventMatchesCaller(
   return false;
 }
 
+/** Convert any calendar ISO datetime to studio-local tool format (YYYY-MM-DDTHH:mm:00). */
+export function toStudioLocalDateTime(dateTime: string): string {
+  const hasOffset = /[+-]\d{2}:\d{2}$/.test(dateTime) || dateTime.endsWith("Z");
+  if (!hasOffset) {
+    return normalizeLocalDateTime(dateTime).slice(0, 19);
+  }
+
+  const parts = studioDateParts(new Date(dateTime));
+  return formatStudioDateTime(parts.year, parts.month, parts.day, parts.hour, parts.minute);
+}
+
 export async function findBookings(
   callerName: string,
   callerPhone?: string,
 ): Promise<{
-  bookings: Array<{ dateTime: string; displayTime: string; summary: string }>;
+  bookings: Array<{
+    dateTime: string;
+    displayTime: string;
+    sessionDate: string;
+    sessionTime: string;
+    summary: string;
+  }>;
+  count: number;
+  summary: string;
 }> {
   const now = studioDateParts();
   const timeMin = `${now.year}-${now.month}-${now.day}T00:00:00Z`;
@@ -390,13 +410,26 @@ export async function findBookings(
 
   const bookings = (events.data.items ?? [])
     .filter((e) => e.start?.dateTime && eventMatchesCaller(e, callerName, callerPhone))
-    .map((e) => ({
-      dateTime: e.start!.dateTime!,
-      displayTime: formatDisplayTime(e.start!.dateTime!),
-      summary: e.summary ?? "Session",
-    }));
+    .map((e) => {
+      const local = toStudioLocalDateTime(e.start!.dateTime!);
+      const displayTime = formatDisplayTime(local);
+      return {
+        dateTime: local,
+        displayTime,
+        sessionDate: local.slice(0, 10),
+        sessionTime: displayTime,
+        summary: e.summary ?? "Session",
+      };
+    });
 
-  return { bookings };
+  const summary =
+    bookings.length === 0
+      ? "No upcoming sessions found for that name."
+      : bookings.length === 1
+        ? `Current booking: ${bookings[0].displayTime}. For cancel/reschedule use dateTime exactly: ${bookings[0].dateTime}`
+        : `${bookings.length} upcoming sessions. Use exact dateTime from bookings for cancel/reschedule.`;
+
+  return { bookings, count: bookings.length, summary };
 }
 
 export async function bookingEventExists(
@@ -429,11 +462,12 @@ async function findBookingEvent(
     }
   | undefined
 > {
-  const events = await listEventsOnDate(studioDateFromDateTime(dateTime));
+  const targetLocal = toStudioLocalDateTime(dateTime);
+  const events = await listEventsOnDate(studioDateFromDateTime(targetLocal));
   return events.find(
     (e) =>
       e.start?.dateTime &&
-      studioMinutesFromDateTime(e.start.dateTime) === studioMinutesFromDateTime(dateTime) &&
+      toStudioLocalDateTime(e.start.dateTime) === targetLocal &&
       eventMatchesCaller(e, callerName, callerPhone),
   );
 }
@@ -504,7 +538,7 @@ export async function rescheduleBooking(
   fromDateTime: string,
   toDateTime: string,
   callerPhone?: string,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; dateTime?: string; displayTime?: string }> {
   const oldEvent = await findBookingEvent(callerName, fromDateTime, callerPhone);
 
   if (!oldEvent?.id) {

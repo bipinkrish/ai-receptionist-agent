@@ -221,9 +221,9 @@ const SCHEDULING_POLICY = `\nScheduling: identify callers by first+last name onl
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 
-const RESCHEDULE_POLICY = `\nReschedule: findBookings by callerName, verify new slot, then rescheduleBooking.`;
+const RESCHEDULE_POLICY = `\nReschedule: name only → findBookings → confirm current displayTime with caller → new slot → rescheduleBooking using exact fromDateTime from findBookings. Never ask phone.`;
 
-const CANCEL_POLICY = `\nCancel: findBookings by callerName → cancelBooking. Confirm only after tool succeeds.`;
+const CANCEL_POLICY = `\nCancel: name only → findBookings → confirm displayTime → cancelBooking with exact dateTime. Never ask phone.`;
 
 const LOGGING_POLICY = `\nCall logContact silently before goodbye for general call notes only — never topic "Session booking". Book/cancel/reschedule auto-logged. Date YYYY-MM-DD.`;
 

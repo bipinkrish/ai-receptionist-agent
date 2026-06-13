@@ -1,8 +1,18 @@
 import { sheets, SHEET_ID } from "../google-auth.js";
+import { namesMatch } from "./caller-identity.js";
 import { studioDateParts } from "../studio-time.js";
 
 const CONTACTS_TAB = "Contacts";
-const COLUMNS = ["Name", "Phone", "Last Call Date", "Topic", "Outcome", "Notes"] as const;
+const COLUMNS = [
+  "Name",
+  "Phone",
+  "Last Call Date",
+  "Topic",
+  "Outcome",
+  "Notes",
+  "Session Date",
+  "Session Time",
+] as const;
 
 export interface ContactRow {
   name: string;
@@ -11,10 +21,29 @@ export interface ContactRow {
   topic: string;
   outcome: string;
   notes: string;
+  sessionDate?: string;
+  sessionTime?: string;
 }
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, "");
+}
+
+function normalizeContactName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function rowToContact(row: string[]): ContactRow {
+  return {
+    name: row[0] ?? "",
+    phone: row[1] ?? "",
+    date: row[2] ?? "",
+    topic: row[3] ?? "",
+    outcome: row[4] ?? "",
+    notes: row[5] ?? "",
+    sessionDate: row[6] ?? "",
+    sessionTime: row[7] ?? "",
+  };
 }
 
 async function ensureContactsTab(): Promise<void> {
@@ -39,13 +68,9 @@ async function readAllRows(): Promise<string[][]> {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `${CONTACTS_TAB}!A:F`,
+    range: `${CONTACTS_TAB}!A:H`,
   });
   return (res.data.values as string[][]) ?? [];
-}
-
-function normalizeContactName(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export async function findContactByName(
@@ -56,18 +81,9 @@ export async function findContactByName(
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (normalizeContactName(row[0] ?? "") === needle) {
-      return {
-        rowIndex: i + 1,
-        data: {
-          name: row[0] ?? "",
-          phone: row[1] ?? "",
-          date: row[2] ?? "",
-          topic: row[3] ?? "",
-          outcome: row[4] ?? "",
-          notes: row[5] ?? "",
-        },
-      };
+    const rowName = row[0] ?? "";
+    if (normalizeContactName(rowName) === needle || namesMatch(name, rowName)) {
+      return { rowIndex: i + 1, data: rowToContact(row) };
     }
   }
   return null;
@@ -80,17 +96,7 @@ export async function findContact(phone: string): Promise<{ rowIndex: number; da
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (normalizePhone(row[1] ?? "") === needle) {
-      return {
-        rowIndex: i + 1,
-        data: {
-          name: row[0] ?? "",
-          phone: row[1] ?? "",
-          date: row[2] ?? "",
-          topic: row[3] ?? "",
-          outcome: row[4] ?? "",
-          notes: row[5] ?? "",
-        },
-      };
+      return { rowIndex: i + 1, data: rowToContact(row) };
     }
   }
   return null;
@@ -116,6 +122,8 @@ function normalizeContact(contact: ContactRow): ContactRow {
     ...contact,
     date: normalizeContactDate(contact.date),
     notes: contact.notes.trim(),
+    sessionDate: contact.sessionDate?.trim() ?? "",
+    sessionTime: contact.sessionTime?.trim() ?? "",
   };
 }
 
@@ -134,7 +142,7 @@ export async function clearContactsSheet(): Promise<number> {
   if (dataRows > 0) {
     await sheets.spreadsheets.values.clear({
       spreadsheetId: SHEET_ID,
-      range: `${CONTACTS_TAB}!A2:F`,
+      range: `${CONTACTS_TAB}!A2:H`,
     });
   }
   return dataRows;
@@ -160,9 +168,20 @@ export async function logContact(
         "Booking status is logged automatically by bookSlot, cancelBooking, or rescheduleBooking — use logContact only for general call notes.",
     };
   }
+
   const existingByPhone = normalized.phone ? await findContact(normalized.phone) : null;
   const existing = existingByPhone ?? (await findContactByName(normalized.name));
   const phone = existing?.data.phone || normalized.phone;
+
+  const sessionDate =
+    normalized.topic.toLowerCase() === "session cancellation"
+      ? ""
+      : normalized.sessionDate || existing?.data.sessionDate || "";
+  const sessionTime =
+    normalized.topic.toLowerCase() === "session cancellation"
+      ? ""
+      : normalized.sessionTime || existing?.data.sessionTime || "";
+
   const notes = existing ? appendContactNotes(existing.data.notes, normalized) : normalized.notes;
   const values = [
     normalized.name,
@@ -171,12 +190,14 @@ export async function logContact(
     normalized.topic,
     normalized.outcome,
     notes,
+    sessionDate,
+    sessionTime,
   ];
 
   if (existing) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${CONTACTS_TAB}!A${existing.rowIndex}:F${existing.rowIndex}`,
+      range: `${CONTACTS_TAB}!A${existing.rowIndex}:H${existing.rowIndex}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
@@ -188,7 +209,7 @@ export async function logContact(
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${CONTACTS_TAB}!A:F`,
+    range: `${CONTACTS_TAB}!A:H`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
@@ -200,10 +221,14 @@ export async function ensureContactsHeader(): Promise<void> {
   await ensureContactsTab();
 
   const rows = await readAllRows();
-  if (rows.length === 0 || rows[0]?.[0] !== COLUMNS[0]) {
+  const header = rows[0] ?? [];
+  const needsHeader = header.length === 0 || header[0] !== COLUMNS[0];
+  const needsSessionCols = header.length < COLUMNS.length || header[6] !== COLUMNS[6];
+
+  if (needsHeader || needsSessionCols) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${CONTACTS_TAB}!A1:F1`,
+      range: `${CONTACTS_TAB}!A1:H1`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [COLUMNS as unknown as string[]] },
     });

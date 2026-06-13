@@ -112,6 +112,22 @@ export function normalizeCallerNameKey(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/** Fuzzy name match — handles minor STT differences (first + last name). */
+export function namesMatch(provided: string, stored: string): boolean {
+  const a = normalizeCallerNameKey(provided);
+  const b = normalizeCallerNameKey(stored);
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const wordsA = a.split(" ").filter(Boolean);
+  const wordsB = b.split(" ").filter(Boolean);
+  if (wordsA.length >= 2 && wordsB.length >= 2) {
+    return wordsA[0] === wordsB[0] && wordsA[wordsA.length - 1] === wordsB[wordsB.length - 1];
+  }
+
+  return a.includes(b) || b.includes(a);
+}
+
 function isSpokenDigitName(name: string): boolean {
   const words = name.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return false;

@@ -1,7 +1,6 @@
-import { bookSession, cancelSession, rescheduleSession } from "./booking-flow.js";
+import { bookSession, cancelSession, lookupBookings, rescheduleSession } from "./booking-flow.js";
 import {
   checkSlot,
-  findBookings,
   getStudioBusinessHours,
   listAvailableSlots,
 } from "./calendar.js";
@@ -77,7 +76,8 @@ const findBookingsTool = {
   type: "function" as const,
   function: {
     name: "findBookings",
-    description: "Find upcoming session bookings by caller's full name. Returning callers are identified by name only.",
+    description:
+      "Find upcoming bookings by caller's full name only — no phone needed. Read summary and use exact dateTime for cancel/reschedule.",
     parameters: {
       type: "object",
       properties: {
@@ -197,7 +197,7 @@ export async function runTool(name: string, args: Record<string, string>): Promi
         await bookSession(args.dateTime, args.callerName, args.callerPhone),
       );
     case "findBookings":
-      return JSON.stringify(await findBookings(args.callerName, args.phone));
+      return JSON.stringify(await lookupBookings(args.callerName));
     case "rescheduleBooking":
       return JSON.stringify(
         await rescheduleSession(

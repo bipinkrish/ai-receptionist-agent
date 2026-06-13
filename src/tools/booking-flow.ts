@@ -2,6 +2,7 @@ import {
   bookSlot as bookCalendarSlot,
   bookingEventExists,
   cancelBooking as cancelCalendarBooking,
+  findBookings as findCalendarBookings,
   type BookingEventSnapshot,
   restoreBookingEvent,
   rescheduleBooking as rescheduleCalendarBooking,
@@ -29,6 +30,7 @@ async function syncContactLog(params: {
   outcome: string;
   notes: string;
   sessionDate?: string;
+  sessionTime?: string;
   allowBookingTopic?: boolean;
 }): Promise<{ success: boolean; message: string }> {
   try {
@@ -36,10 +38,12 @@ async function syncContactLog(params: {
       {
         name: params.name,
         phone: params.phone,
-        date: params.sessionDate ?? todayStudioDate(),
+        date: todayStudioDate(),
         topic: params.topic,
         outcome: params.outcome,
         notes: params.notes,
+        sessionDate: params.sessionDate,
+        sessionTime: params.sessionTime,
       },
       { allowBookingTopic: params.allowBookingTopic },
     );
@@ -50,12 +54,9 @@ async function syncContactLog(params: {
   }
 }
 
-/** Name verifies returning callers; phone is collected on first call only. */
-async function resolveCallerIdentity(
-  callerName: string,
-  callerPhone?: string,
-): Promise<
-  | { success: true; callerName: string; callerPhone: string; isNewCaller: boolean }
+/** Name only — never requires phone (cancel / reschedule / lookup). */
+async function resolveCallerByNameOnly(callerName: string): Promise<
+  | { success: true; callerName: string; callerPhone: string }
   | { success: false; message: string }
 > {
   const nameResult = validateCallerName(callerName);
@@ -63,36 +64,48 @@ async function resolveCallerIdentity(
     return { success: false, message: nameResult.message ?? "Name required." };
   }
 
-  const normalizedName = nameResult.normalized!;
-  const existing = await findContactByName(normalizedName);
+  const existing = await findContactByName(nameResult.normalized!);
+  return {
+    success: true,
+    callerName: nameResult.normalized!,
+    callerPhone: existing?.data.phone.trim() ?? "",
+  };
+}
 
-  if (existing) {
-    const storedPhone = existing.data.phone.trim();
-    if (storedPhone) {
-      return {
-        success: true,
-        callerName: normalizedName,
-        callerPhone: storedPhone,
-        isNewCaller: false,
-      };
-    }
-  }
+/** Phone required only for brand-new callers (first booking). */
+async function resolveCallerForNewBooking(
+  callerName: string,
+  callerPhone?: string,
+): Promise<
+  | { success: true; callerName: string; callerPhone: string }
+  | { success: false; message: string }
+> {
+  const byName = await resolveCallerByNameOnly(callerName);
+  if (!byName.success) return byName;
+
+  if (byName.callerPhone) return byName;
 
   const phone = formatPhoneForEntry(callerPhone ?? "");
   if (!phone) {
     return {
       success: false,
-      message:
-        "May I have a phone number where we can reach you? We only need this the first time you book.",
+      message: "May I have a phone number where we can reach you? We only need this once.",
     };
   }
 
-  return {
-    success: true,
-    callerName: normalizedName,
-    callerPhone: phone,
-    isNewCaller: !existing,
-  };
+  return { success: true, callerName: byName.callerName, callerPhone: phone };
+}
+
+export async function lookupBookings(callerName: string) {
+  const identity = await resolveCallerByNameOnly(callerName);
+  if (!identity.success) {
+    return { bookings: [], count: 0, summary: identity.message };
+  }
+
+  return findCalendarBookings(
+    identity.callerName,
+    identity.callerPhone || undefined,
+  );
 }
 
 /** Book session: calendar event + Contacts sheet row (rolls back calendar if sheet fails). */
@@ -101,7 +114,7 @@ export async function bookSession(
   callerName: string,
   callerPhone?: string,
 ): Promise<{ success: boolean; message: string; dateTime?: string }> {
-  const identity = await resolveCallerIdentity(callerName, callerPhone);
+  const identity = await resolveCallerForNewBooking(callerName, callerPhone);
   if (!identity.success) {
     return { success: false, message: identity.message };
   }
@@ -126,10 +139,11 @@ export async function bookSession(
   const sheetResult = await syncContactLog({
     name: identity.callerName,
     phone: identity.callerPhone,
-    sessionDate: sessionDateFromDateTime(bookedDateTime),
     topic: "Session booking",
     outcome: "Booked",
     notes: calendarResult.message,
+    sessionDate: sessionDateFromDateTime(bookedDateTime),
+    sessionTime: calendarResult.displayTime ?? bookedDateTime,
     allowBookingTopic: true,
   });
 
@@ -148,13 +162,12 @@ export async function bookSession(
   };
 }
 
-/** Cancel session: calendar delete + Contacts sheet update (restores event if sheet fails). */
 export async function cancelSession(
   callerName: string,
   dateTime: string,
-  callerPhone?: string,
+  _callerPhone?: string,
 ): Promise<{ success: boolean; message: string; displayTime?: string }> {
-  const identity = await resolveCallerIdentity(callerName, callerPhone);
+  const identity = await resolveCallerByNameOnly(callerName);
   if (!identity.success) {
     return { success: false, message: identity.message };
   }
@@ -162,17 +175,18 @@ export async function cancelSession(
   const calendarResult = await cancelCalendarBooking(
     identity.callerName,
     dateTime,
-    identity.callerPhone,
+    identity.callerPhone || undefined,
   );
   if (!calendarResult.success) return calendarResult;
 
   const sheetResult = await syncContactLog({
     name: identity.callerName,
     phone: identity.callerPhone,
-    sessionDate: sessionDateFromDateTime(dateTime),
     topic: "Session cancellation",
     outcome: "Cancelled",
     notes: calendarResult.message,
+    sessionDate: "",
+    sessionTime: "",
     allowBookingTopic: true,
   });
 
@@ -202,14 +216,13 @@ export async function cancelSession(
   };
 }
 
-/** Reschedule session: calendar move + Contacts sheet update (rolls back move if sheet fails). */
 export async function rescheduleSession(
   callerName: string,
   fromDateTime: string,
   toDateTime: string,
-  callerPhone?: string,
-): Promise<{ success: boolean; message: string }> {
-  const identity = await resolveCallerIdentity(callerName, callerPhone);
+  _callerPhone?: string,
+): Promise<{ success: boolean; message: string; dateTime?: string }> {
+  const identity = await resolveCallerByNameOnly(callerName);
   if (!identity.success) {
     return { success: false, message: identity.message };
   }
@@ -218,17 +231,19 @@ export async function rescheduleSession(
     identity.callerName,
     fromDateTime,
     toDateTime,
-    identity.callerPhone,
+    identity.callerPhone || undefined,
   );
   if (!calendarResult.success) return calendarResult;
 
+  const newDateTime = calendarResult.dateTime ?? toDateTime;
   const sheetResult = await syncContactLog({
     name: identity.callerName,
     phone: identity.callerPhone,
-    sessionDate: sessionDateFromDateTime(toDateTime),
     topic: "Session reschedule",
     outcome: "Rescheduled",
-    notes: `Moved from ${fromDateTime} to ${toDateTime}. ${calendarResult.message}`,
+    notes: `Moved to ${newDateTime}. ${calendarResult.message}`,
+    sessionDate: sessionDateFromDateTime(newDateTime),
+    sessionTime: calendarResult.displayTime ?? newDateTime,
     allowBookingTopic: true,
   });
 
@@ -238,7 +253,7 @@ export async function rescheduleSession(
     identity.callerName,
     toDateTime,
     fromDateTime,
-    identity.callerPhone,
+    identity.callerPhone || undefined,
   );
   return {
     success: false,
