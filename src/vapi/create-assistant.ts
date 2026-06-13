@@ -97,6 +97,7 @@ function buildAssistantPayload() {
     voice: {
       provider: "vapi",
       voiceId: "Emma",
+      version: 2,
     },
     server: {
       url: toolServerUrl,
