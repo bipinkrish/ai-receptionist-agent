@@ -168,6 +168,8 @@ export function shouldRequireTools(userMessage: string, history: HistoryMessage[
 
   if (intent.wantsHours && !intent.wantsScheduling && !intent.hasDay) return true;
 
+  if ((intent.wantsCancel || intent.wantsReschedule) && intent.hasName) return true;
+
   return false;
 }
 
@@ -221,9 +223,9 @@ const SCHEDULING_POLICY = `\nScheduling: identify callers by first+last name onl
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 
-const RESCHEDULE_POLICY = `\nReschedule: name only → findBookings → confirm current displayTime with caller → new slot → rescheduleBooking using exact fromDateTime from findBookings. Never ask phone.`;
+const RESCHEDULE_POLICY = `\nReschedule: name only → call findBookings FIRST (never guess bookings) → confirm displayTime with caller → ask for new day/time → rescheduleBooking using exact fromDateTime from findBookings. Never ask phone. Never state any booking details without findBookings results.`;
 
-const CANCEL_POLICY = `\nCancel: name only → findBookings → confirm displayTime → cancelBooking with exact dateTime. Never ask phone.`;
+const CANCEL_POLICY = `\nCancel: name only → call findBookings FIRST (never guess bookings) → confirm displayTime with caller → cancelBooking with exact dateTime. Never ask phone. Never state any booking details without findBookings results.`;
 
 const LOGGING_POLICY = `\nCall logContact silently before goodbye for general call notes only — never topic "Session booking". Book/cancel/reschedule auto-logged. Date YYYY-MM-DD.`;
 
