@@ -4,6 +4,7 @@ import {
   contactToolDefinitions,
   loggingToolDefinitions,
 } from "./tools/index.js";
+import { transcriptHasCallerName } from "./tools/caller-identity.js";
 
 const PHONE_REGEX = /\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b|\b555[-\s]?[A-Z0-9-]+\b/i;
 const DAY_REGEX = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
@@ -21,6 +22,7 @@ type HistoryMessage = { role: string; content?: unknown };
 
 interface ConversationIntent {
   hasPhone: boolean;
+  hasName: boolean;
   hasDay: boolean;
   hasTime: boolean;
   wantsScheduling: boolean;
@@ -85,6 +87,7 @@ function detectIntent(history: HistoryMessage[], userMessage: string): Conversat
 
   return {
     hasPhone: PHONE_REGEX.test(transcript),
+    hasName: transcriptHasCallerName(transcript, userMessage),
     hasDay: DAY_REGEX.test(userMessage) || DAY_REGEX.test(transcript),
     hasTime: TIME_REGEX.test(userMessage),
     wantsScheduling: SCHEDULING_REGEX.test(transcript) || SCHEDULING_REGEX.test(userMessage),
@@ -129,12 +132,15 @@ function calendarToolsForIntent(intent: ConversationIntent): ChatCompletionTool[
     names.push("listAvailableSlots", "checkSlot");
   }
 
-  if ((intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel) {
+  if (intent.hasPhone && intent.hasName && (intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel) {
     names.push("bookSlot");
   }
 
   if (intent.wantsReschedule) {
-    names.push("findBookings", "rescheduleBooking");
+    names.push("findBookings");
+    if (intent.hasPhone && intent.hasName) {
+      names.push("rescheduleBooking");
+    }
   } else if (intent.hasPhone && intent.wantsScheduling) {
     names.push("findBookings");
   }
@@ -153,7 +159,7 @@ export function shouldRequireTools(userMessage: string, history: HistoryMessage[
     return false;
   }
 
-  if (intent.pendingConfirm) return true;
+  if (intent.pendingConfirm && intent.hasPhone && intent.hasName) return true;
   if (intent.hasDay && intent.hasTime) return true;
 
   if (PHONE_REGEX.test(trimmed) && /book|slot|session|phone|name|confirm|time|cancel/i.test(lastAssistant)) {
@@ -211,7 +217,7 @@ export function getActiveTools(
   return deduped.length > 0 ? deduped : undefined;
 }
 
-const SCHEDULING_POLICY = `\nScheduling: use listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
+const SCHEDULING_POLICY = `\nScheduling: collect FULL NAME and PHONE from caller before bookSlot — never book without both. Then listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 

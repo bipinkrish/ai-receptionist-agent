@@ -5,6 +5,7 @@ import {
   restoreBookingEvent,
   rescheduleBooking as rescheduleCalendarBooking,
 } from "./calendar.js";
+import { validateBookingIdentity, validateCallerName, validateCallerPhone } from "./caller-identity.js";
 import { findContact, logContact } from "./sheets.js";
 import { studioDateParts } from "../studio-time.js";
 
@@ -43,9 +44,15 @@ async function syncContactLog(params: {
 
 async function resolveCallerName(phone: string, fallback?: string): Promise<string> {
   const existing = await findContact(phone);
-  if (existing?.data.name.trim()) return existing.data.name.trim();
-  if (fallback?.trim()) return fallback.trim();
-  return "Caller";
+  if (existing?.data.name.trim()) {
+    const validated = validateCallerName(existing.data.name);
+    if (validated.valid) return validated.normalized!;
+  }
+  if (fallback?.trim()) {
+    const validated = validateCallerName(fallback);
+    if (validated.valid) return validated.normalized!;
+  }
+  return "Unknown caller";
 }
 
 /** Book session: calendar event + Contacts sheet row (rolls back calendar if sheet fails). */
@@ -54,13 +61,22 @@ export async function bookSession(
   callerName: string,
   callerPhone: string,
 ): Promise<{ success: boolean; message: string; dateTime?: string }> {
-  const calendarResult = await bookCalendarSlot(dateTime, callerName, callerPhone);
+  const identity = validateBookingIdentity(callerName, callerPhone);
+  if (!identity.success) {
+    return { success: false, message: identity.message };
+  }
+
+  const calendarResult = await bookCalendarSlot(
+    dateTime,
+    identity.callerName,
+    identity.callerPhone,
+  );
   if (!calendarResult.success) return calendarResult;
 
   const bookedDateTime = calendarResult.dateTime ?? dateTime;
   const sheetResult = await syncContactLog({
-    name: callerName,
-    phone: callerPhone,
+    name: identity.callerName,
+    phone: identity.callerPhone,
     sessionDate: sessionDateFromDateTime(bookedDateTime),
     topic: "Session booking",
     outcome: "Booked",
@@ -69,7 +85,7 @@ export async function bookSession(
 
   if (sheetResult.success) return calendarResult;
 
-  const rolledBack = await cancelCalendarBooking(callerPhone, bookedDateTime);
+  const rolledBack = await cancelCalendarBooking(identity.callerPhone, bookedDateTime);
   return {
     success: false,
     message: rolledBack.success
@@ -83,13 +99,18 @@ export async function cancelSession(
   callerPhone: string,
   dateTime: string,
 ): Promise<{ success: boolean; message: string; displayTime?: string }> {
-  const calendarResult = await cancelCalendarBooking(callerPhone, dateTime);
+  const phoneResult = validateCallerPhone(callerPhone);
+  if (!phoneResult.valid) {
+    return { success: false, message: phoneResult.message ?? "Phone number required." };
+  }
+
+  const calendarResult = await cancelCalendarBooking(phoneResult.display!, dateTime);
   if (!calendarResult.success) return calendarResult;
 
-  const callerName = await resolveCallerName(callerPhone, calendarResult.callerName);
+  const callerName = await resolveCallerName(phoneResult.display!, calendarResult.callerName);
   const sheetResult = await syncContactLog({
     name: callerName,
-    phone: callerPhone,
+    phone: phoneResult.display!,
     sessionDate: sessionDateFromDateTime(dateTime),
     topic: "Session cancellation",
     outcome: "Cancelled",
@@ -129,17 +150,22 @@ export async function rescheduleSession(
   toDateTime: string,
   callerName: string,
 ): Promise<{ success: boolean; message: string }> {
+  const identity = validateBookingIdentity(callerName, callerPhone);
+  if (!identity.success) {
+    return { success: false, message: identity.message };
+  }
+
   const calendarResult = await rescheduleCalendarBooking(
-    callerPhone,
+    identity.callerPhone,
     fromDateTime,
     toDateTime,
-    callerName,
+    identity.callerName,
   );
   if (!calendarResult.success) return calendarResult;
 
   const sheetResult = await syncContactLog({
-    name: callerName,
-    phone: callerPhone,
+    name: identity.callerName,
+    phone: identity.callerPhone,
     sessionDate: sessionDateFromDateTime(toDateTime),
     topic: "Session reschedule",
     outcome: "Rescheduled",
@@ -148,7 +174,12 @@ export async function rescheduleSession(
 
   if (sheetResult.success) return calendarResult;
 
-  const rolledBack = await rescheduleCalendarBooking(callerPhone, toDateTime, fromDateTime, callerName);
+  const rolledBack = await rescheduleCalendarBooking(
+    identity.callerPhone,
+    toDateTime,
+    fromDateTime,
+    identity.callerName,
+  );
   return {
     success: false,
     message: rolledBack.success

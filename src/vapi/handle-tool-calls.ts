@@ -1,5 +1,6 @@
 import { runTool } from "../tools/index.js";
 import { compactToolResult } from "../compact-tool-result.js";
+import { isUsablePhone, validateCallerPhone } from "../tools/caller-identity.js";
 import { scheduleEndCall } from "./end-call.js";
 
 export type VapiToolCall = {
@@ -11,7 +12,10 @@ export type VapiToolCall = {
 export type VapiToolCallsBody = {
   message?: {
     type?: string;
-    call?: { id?: string };
+    call?: {
+      id?: string;
+      customer?: { number?: string; phoneNumber?: string; name?: string };
+    };
     toolCallList?: unknown[];
     toolCalls?: unknown[];
     toolWithToolCallList?: unknown[];
@@ -123,14 +127,57 @@ function logContactSucceeded(output: string): boolean {
   }
 }
 
+function extractVapiCallerContext(body: VapiToolCallsBody): { phone?: string; name?: string } {
+  const customer = body.message?.call?.customer;
+  if (!customer) return {};
+
+  const phoneCandidate = customer.number ?? customer.phoneNumber;
+  const phone =
+    typeof phoneCandidate === "string" && isUsablePhone(phoneCandidate)
+      ? validateCallerPhone(phoneCandidate).display
+      : undefined;
+
+  const name = typeof customer.name === "string" ? customer.name.trim() : undefined;
+  return { phone, name: name || undefined };
+}
+
+const BOOKING_TOOLS = new Set(["bookSlot", "cancelBooking", "rescheduleBooking", "findBookings"]);
+
+function enrichBookingArgs(
+  toolName: string,
+  args: Record<string, string>,
+  caller: { phone?: string; name?: string },
+): Record<string, string> {
+  if (!BOOKING_TOOLS.has(toolName)) return args;
+
+  const enriched = { ...args };
+  const phoneKey = toolName === "findBookings" ? "phone" : "callerPhone";
+
+  if (caller.phone && !isUsablePhone(enriched[phoneKey] ?? "")) {
+    enriched[phoneKey] = caller.phone;
+  }
+
+  if (toolName === "bookSlot" || toolName === "rescheduleBooking") {
+    const nameKey = "callerName";
+    const existing = enriched[nameKey]?.trim() ?? "";
+    if (caller.name && (!existing || existing.toLowerCase() === "caller")) {
+      enriched[nameKey] = caller.name;
+    }
+  }
+
+  return enriched;
+}
+
 export async function handleVapiToolCalls(body: VapiToolCallsBody) {
   const toolCalls = extractToolCalls(body);
   const callId = body.message?.call?.id;
+  const callerContext = extractVapiCallerContext(body);
   const results = [];
 
   for (const call of toolCalls) {
     try {
-      const output = await runTool(call.name, normalizeArgs(call.parameters));
+      const args = enrichBookingArgs(call.name, normalizeArgs(call.parameters), callerContext);
+      const output = await runTool(call.name, args);
       const result = toSingleLine(compactToolResult(call.name, output));
       results.push({
         toolCallId: call.id,
