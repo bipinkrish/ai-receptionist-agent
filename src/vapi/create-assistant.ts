@@ -79,10 +79,10 @@ function buildAssistantPayload() {
       maxTokens: 60,
       messages: [
         { role: "system", content: buildSystemPrompt(VOICE_POLICY) },
-        { role: "user", content: "I'd like to book a class." },
-        { role: "assistant", content: "I'd be happy to help! May I have your first and last name?" },
-        { role: "user", content: "Sarah Chen. Saturday morning." },
-        { role: "assistant", content: "Thanks, Sarah. What time on Saturday works best for you?" },
+        { role: "user", content: "Hi, my name is Sarah Chen." },
+        { role: "assistant", content: "Hi Sarah! Would you like to book, cancel, or reschedule a session?" },
+        { role: "user", content: "I'd like to book a class on Saturday." },
+        { role: "assistant", content: "Sure! What time on Saturday works best for you?" },
         { role: "user", content: "How much is a class?" },
         {
           role: "assistant",

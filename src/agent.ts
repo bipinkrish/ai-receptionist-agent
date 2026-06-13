@@ -29,6 +29,7 @@ async function callGroq(
 ) {
   return groq.chat.completions.create({
     model: MODEL,
+    temperature: 0.3,
     max_tokens: MAX_TOKENS,
     messages: [{ role: "system", content: buildSystemPrompt(SYSTEM_POLICY + extraSystem) }, ...history],
     ...(tools?.length ? { tools, tool_choice: toolChoice } : {}),
