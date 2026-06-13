@@ -63,6 +63,7 @@ export async function chat(
   history: ChatCompletionMessageParam[],
   onStatus?: ChatStatusCallback,
 ): Promise<string> {
+  console.log("[chat] user:", userMessage);
   history.push({ role: "user", content: userMessage });
 
   const tools = getActiveTools(history, userMessage);
@@ -97,6 +98,7 @@ export async function chat(
         requireTools = false;
         continue;
       }
+      console.log("[chat] reply:", choice.content);
       return choice.content ?? "Sorry, I didn't get a response. Please try again.";
     }
 
@@ -113,7 +115,9 @@ export async function chat(
         args = {};
       }
 
+      console.log("[chat] tool call:", fn.name, JSON.stringify(args));
       const result = compactToolResult(fn.name, await runTool(fn.name, args));
+      console.log("[chat] tool result:", fn.name, result);
       const toolMessage: ChatCompletionToolMessageParam = {
         role: "tool",
         tool_call_id: toolCall.id,
