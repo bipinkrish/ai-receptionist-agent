@@ -148,27 +148,27 @@ function calendarToolsForIntent(intent: ConversationIntent): ChatCompletionTool[
   return pickTools(calendarToolDefinitions, names);
 }
 
-/** Force a tool call only when we have enough info for the tool to succeed. */
+/** Force a tool call when we have enough info for the tool to succeed. */
 export function shouldRequireTools(userMessage: string, history: HistoryMessage[]): boolean {
   const intent = detectIntent(history, userMessage);
   const trimmed = userMessage.trim();
   const lastAssistant = lastAssistantMessage(history);
 
-  // Clarifications / pushback — let the model respond in text, not force a tool
   if (/^(but |why |how come|what do you mean|you said|you are saying|i don't|that doesn't)/i.test(trimmed)) {
     return false;
   }
 
   if (intent.pendingConfirm && intent.hasName) return true;
   if (intent.hasDay && intent.hasTime) return true;
+  if (intent.hasDay && intent.wantsScheduling) return true;
+
+  if ((intent.wantsCancel || intent.wantsReschedule) && intent.hasName) return true;
+
+  if (intent.wantsHours && !intent.wantsScheduling) return true;
 
   if (PHONE_REGEX.test(trimmed) && /book|slot|session|phone|name|confirm|time|cancel/i.test(lastAssistant)) {
     return true;
   }
-
-  if (intent.wantsHours && !intent.wantsScheduling && !intent.hasDay) return true;
-
-  if ((intent.wantsCancel || intent.wantsReschedule) && intent.hasName) return true;
 
   return false;
 }

@@ -79,13 +79,27 @@ export async function chat(
 
   emitStatus(getWorkingStatusMessage(userMessage, history));
 
+  let anyToolCalled = false;
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await callGroq(
-      history,
-      tools,
-      requireTools && tools?.length ? "required" : "auto",
-      extraSystem,
-    );
+    let response;
+    try {
+      response = await callGroq(
+        history,
+        tools,
+        requireTools && tools?.length ? "required" : "auto",
+        extraSystem,
+      );
+    } catch (err: unknown) {
+      const groqErr = err as { error?: { error?: { code?: string; failed_generation?: string } } };
+      if (groqErr?.error?.error?.code === "tool_use_failed" && groqErr.error.error.failed_generation) {
+        const fallback = groqErr.error.error.failed_generation;
+        console.log("[chat] tool_use_failed, using failed_generation:", fallback);
+        history.push({ role: "assistant", content: fallback });
+        return fallback;
+      }
+      throw err;
+    }
 
     const choice = response.choices[0]?.message;
     if (!choice) return "Sorry, I didn't get a response. Please try again.";
@@ -98,11 +112,28 @@ export async function chat(
         requireTools = false;
         continue;
       }
-      console.log("[chat] reply:", choice.content);
-      return choice.content ?? "Sorry, I didn't get a response. Please try again.";
+      const reply = choice.content ?? "";
+
+      if (
+        !anyToolCalled &&
+        /\b(booked|confirmed your|cancelled|rescheduled|moved your)\b/i.test(reply)
+      ) {
+        console.warn("[chat] BLOCKED fabricated action — model claimed action without tool call:", reply);
+        history.pop();
+        history.push({
+          role: "assistant",
+          content: "Let me look that up for you — one moment.",
+        });
+        requireTools = true;
+        continue;
+      }
+
+      console.log("[chat] reply:", reply);
+      return reply || "Sorry, I didn't get a response. Please try again.";
     }
 
     requireTools = false;
+    anyToolCalled = true;
 
     for (const toolCall of toolCalls) {
       const fn = toolCall.function;
