@@ -139,7 +139,7 @@ const logContactTool = {
   function: {
     name: "logContact",
     description:
-      "Log or update a caller in the Contacts sheet for call wrap-up notes only (e.g. topic: inquiry, pricing question). Do NOT use for booking/cancel/reschedule — those are logged automatically by bookSlot/cancelBooking/rescheduleBooking.",
+      "Log caller for escalation callback or wrap-up notes. For escalation use topic: escalation, outcome: callback requested. Not for booking status (auto-logged).",
     parameters: {
       type: "object",
       properties: {

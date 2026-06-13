@@ -75,7 +75,8 @@ function buildAssistantPayload() {
     model: {
       provider: "groq",
       model: MODEL,
-      maxTokens: 120,
+      temperature: 0.2,
+      maxTokens: 80,
       messages: [{ role: "system", content: buildSystemPrompt(VOICE_POLICY) }],
       tools: buildAssistantTools(toolServerUrl!),
     },

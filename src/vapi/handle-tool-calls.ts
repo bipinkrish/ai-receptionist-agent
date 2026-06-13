@@ -141,18 +141,42 @@ function extractVapiCallerContext(body: VapiToolCallsBody): { phone?: string; na
   return { phone, name: name || undefined };
 }
 
-const BOOKING_TOOLS = new Set(["bookSlot", "cancelBooking", "rescheduleBooking", "findBookings"]);
+const SERVER_TOOLS = new Set([
+  "bookSlot",
+  "cancelBooking",
+  "rescheduleBooking",
+  "findBookings",
+  "logContact",
+]);
 
-function enrichBookingArgs(
+function enrichToolArgs(
   toolName: string,
   args: Record<string, string>,
   caller: { phone?: string; name?: string },
 ): Record<string, string> {
-  if (!BOOKING_TOOLS.has(toolName)) return args;
+  if (!SERVER_TOOLS.has(toolName)) return args;
 
   const enriched = { ...args };
-  const phoneKey = toolName === "findBookings" ? "phone" : "callerPhone";
 
+  if (toolName === "findBookings") {
+    if (caller.phone && !isUsablePhone(enriched.phone ?? "")) {
+      enriched.phone = caller.phone;
+    }
+    return enriched;
+  }
+
+  if (toolName === "logContact") {
+    if (caller.phone && !isUsablePhone(enriched.phone ?? "")) {
+      enriched.phone = caller.phone;
+    }
+    const name = enriched.name?.trim() ?? "";
+    if (caller.name && (!name || name.toLowerCase() === "caller")) {
+      enriched.name = caller.name;
+    }
+    return enriched;
+  }
+
+  const phoneKey = "callerPhone";
   if (caller.phone && !isUsablePhone(enriched[phoneKey] ?? "")) {
     enriched[phoneKey] = caller.phone;
   }
@@ -176,7 +200,7 @@ export async function handleVapiToolCalls(body: VapiToolCallsBody) {
 
   for (const call of toolCalls) {
     try {
-      const args = enrichBookingArgs(call.name, normalizeArgs(call.parameters), callerContext);
+      const args = enrichToolArgs(call.name, normalizeArgs(call.parameters), callerContext);
       const output = await runTool(call.name, args);
       const result = toSingleLine(compactToolResult(call.name, output));
       results.push({
