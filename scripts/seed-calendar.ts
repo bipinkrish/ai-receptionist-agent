@@ -8,6 +8,7 @@ import { calendar, CALENDAR_ID, SHEET_ID, getServiceAccountEmail } from "../src/
 import { SLOT_MINUTES, validateSessionSlot } from "../src/business-hours.js";
 import { STUDIO_TIMEZONE, nextWeekdayDateTime, studioDateParts } from "../src/studio-time.js";
 import { ensureContactsHeader, logContact } from "../src/tools/sheets.js";
+import { toStudioLocalDateTime } from "../src/tools/calendar.js";
 
 dotenv.config();
 
@@ -26,10 +27,10 @@ function todayDate(): string {
 }
 
 const bookings = [
-  { name: "Alice", phone: "555-0001", start: nextWeekdayDateTime(4, 18, 0) },
-  { name: "Bob", phone: "555-0002", start: nextWeekdayDateTime(4, 18, 30) },
-  { name: "Carol", phone: "555-0003", start: nextWeekdayDateTime(2, 10, 0) },
-  { name: "Dan", phone: "555-0004", start: nextWeekdayDateTime(6, 9, 0) },
+  { name: "Alice Walker", phone: "555-0001", start: nextWeekdayDateTime(4, 18, 0) },
+  { name: "Bob Martinez", phone: "555-0002", start: nextWeekdayDateTime(4, 18, 30) },
+  { name: "Carol Nguyen", phone: "555-0003", start: nextWeekdayDateTime(2, 10, 0) },
+  { name: "Dan Cooper", phone: "555-0004", start: nextWeekdayDateTime(6, 9, 0) },
 ];
 
 async function seedCalendar() {
@@ -71,6 +72,14 @@ async function seedSheets() {
   const date = todayDate();
 
   for (const booking of bookings) {
+    const sessionDate = booking.start.slice(0, 10);
+    const local = toStudioLocalDateTime(booking.start);
+    const [, timePart] = local.split("T");
+    const [h, m] = timePart.split(":").map(Number);
+    const meridiem = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    const sessionTime = m === 0 ? `${h12} ${meridiem}` : `${h12}:${String(m).padStart(2, "0")} ${meridiem}`;
+
     const result = await logContact({
       name: booking.name,
       phone: booking.phone,
@@ -78,6 +87,8 @@ async function seedSheets() {
       topic: "seed",
       outcome: "booked",
       notes: `Seeded with calendar session at ${booking.start}`,
+      sessionDate,
+      sessionTime,
     });
     console.log(`Contacts: ${result.message}`);
   }

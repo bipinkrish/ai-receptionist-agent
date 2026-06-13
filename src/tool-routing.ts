@@ -132,7 +132,7 @@ function calendarToolsForIntent(intent: ConversationIntent): ChatCompletionTool[
     names.push("listAvailableSlots", "checkSlot");
   }
 
-  if (intent.hasName && (intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel) {
+  if (intent.hasName && (intent.pendingConfirm || intent.wantsScheduling) && !intent.wantsCancel && !intent.wantsReschedule) {
     names.push("bookSlot");
   }
 

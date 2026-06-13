@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "groq-sdk/resources/chat/completions";
 import { chat, createHistory, getOpeningGreeting } from "./agent.js";
 import { handleVapiToolCalls, type VapiToolCallsBody } from "./vapi/handle-tool-calls.js";
+import { VOICE_POLICY, buildSystemPrompt } from "./policy.js";
 import { injectAppConfig } from "../scripts/inject-config.mjs";
 
 dotenv.config();
@@ -77,7 +78,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const pathname = url.pathname;
 
-  if (req.method === "OPTIONS" && pathname.startsWith("/api/")) {
+  if (req.method === "OPTIONS" && (pathname.startsWith("/api/") || pathname.startsWith("/vapi/"))) {
     res.writeHead(204, corsHeaders(req));
     res.end();
     return;
@@ -98,6 +99,19 @@ const server = createServer(async (req, res) => {
     }
 
     console.log("[vapi/tools]", JSON.stringify(body, null, 2));
+
+    if (body.message?.type === "assistant-request") {
+      sendJson(req, res, 200, {
+        assistant: {
+          model: {
+            messages: [
+              { role: "system", content: buildSystemPrompt(VOICE_POLICY) },
+            ],
+          },
+        },
+      });
+      return;
+    }
 
     if (body.message?.type !== "tool-calls") {
       sendJson(req, res, 200, { ok: true });

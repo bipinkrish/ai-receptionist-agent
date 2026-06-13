@@ -125,7 +125,14 @@ export function namesMatch(provided: string, stored: string): boolean {
     return wordsA[0] === wordsB[0] && wordsA[wordsA.length - 1] === wordsB[wordsB.length - 1];
   }
 
-  return a.includes(b) || b.includes(a);
+  if (wordsA.length >= 2 && wordsB.length === 1) {
+    return wordsA[0] === wordsB[0] || wordsA[wordsA.length - 1] === wordsB[0];
+  }
+  if (wordsB.length >= 2 && wordsA.length === 1) {
+    return wordsB[0] === wordsA[0] || wordsB[wordsB.length - 1] === wordsA[0];
+  }
+
+  return false;
 }
 
 function isSpokenDigitName(name: string): boolean {
