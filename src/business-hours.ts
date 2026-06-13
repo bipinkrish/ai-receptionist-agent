@@ -1,4 +1,4 @@
-import { STUDIO_TIMEZONE } from "./studio-time.js";
+import { STUDIO_TIMEZONE, studioDateParts } from "./studio-time.js";
 
 export const SLOT_MINUTES = 30;
 
@@ -74,6 +74,42 @@ export function normalizeLocalDateTime(dateTime: string): string {
   return dateTime.replace(/([+-]\d{2}:\d{2}|Z)$/, "").slice(0, 19);
 }
 
+function studioTodayDate(): string {
+  const now = studioDateParts();
+  return `${now.year}-${now.month}-${now.day}`;
+}
+
+/** True when the session start is not in the future (studio timezone). */
+export function isSessionSlotInPast(dateTime: string): boolean {
+  const normalized = normalizeLocalDateTime(dateTime);
+  const [date, timePart] = normalized.split("T");
+  const [hour, minute] = timePart.split(":").map(Number);
+  const today = studioTodayDate();
+
+  if (date < today) return true;
+  if (date > today) return false;
+
+  const now = studioDateParts();
+  const startMin = hour * 60 + minute;
+  const nowMin = now.hour * 60 + now.minute;
+  return startMin <= nowMin;
+}
+
+/** True when studio local time is past closing for this calendar date. */
+export function isStudioDateFullyPast(date: string, dayOfWeek: string): boolean {
+  const today = studioTodayDate();
+  if (date < today) return true;
+  if (date > today) return false;
+
+  const hours = getDayHours(dayOfWeek);
+  if (!hours) return true;
+
+  const now = studioDateParts();
+  const closeMin = parseClockToMinutes(hours.close);
+  const nowMin = now.hour * 60 + now.minute;
+  return nowMin >= closeMin;
+}
+
 /** Validates a 30-min session start time against business hours and holidays. */
 export function validateSessionSlot(dateTime: string): SlotValidation {
   const normalized = normalizeLocalDateTime(dateTime);
@@ -81,6 +117,18 @@ export function validateSessionSlot(dateTime: string): SlotValidation {
   const dayOfWeek = weekdayFromDate(date);
   const [hour, minute] = timePart.split(":").map(Number);
   const startMin = hour * 60 + minute;
+
+  if (isSessionSlotInPast(normalized)) {
+    return {
+      valid: false,
+      reason: "That time is in the past — please choose a future date and time.",
+      dayOfWeek,
+      date,
+      hour,
+      minute,
+    };
+  }
+
   const hours = getDayHours(dayOfWeek);
 
   if (!hours) {

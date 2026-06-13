@@ -8,8 +8,15 @@ export function compactToolResult(name: string, raw: string): string {
       return JSON.stringify(rest);
     }
 
-    if (name === "findBookings" && Array.isArray(data.bookings) && data.bookings.length > 4) {
-      return JSON.stringify({ ...data, bookings: data.bookings.slice(0, 4), truncated: true });
+    if (name === "findBookings" && Array.isArray(data.bookings)) {
+      const bookings = data.bookings.slice(0, 4).map((b) => {
+        const row = b as Record<string, unknown>;
+        const { sessionDate: _sd, sessionTime: _st, summary: _sum, ...rest } = row;
+        return rest;
+      });
+      const compact: Record<string, unknown> = { ...data, bookings };
+      if (data.bookings.length > 4) compact.truncated = true;
+      return JSON.stringify(compact);
     }
 
     if (name === "checkSlot" && Array.isArray(data.nearbySlots)) {

@@ -76,8 +76,20 @@ function buildAssistantPayload() {
       provider: "groq",
       model: MODEL,
       temperature: 0.2,
-      maxTokens: 80,
-      messages: [{ role: "system", content: buildSystemPrompt(VOICE_POLICY) }],
+      maxTokens: 60,
+      messages: [
+        { role: "system", content: buildSystemPrompt(VOICE_POLICY) },
+        { role: "user", content: "I'd like to book a class." },
+        { role: "assistant", content: "I'd be happy to help! May I have your first and last name?" },
+        { role: "user", content: "Sarah Chen. Saturday morning." },
+        { role: "assistant", content: "Thanks, Sarah. What time on Saturday works best for you?" },
+        { role: "user", content: "How much is a class?" },
+        {
+          role: "assistant",
+          content:
+            "I'm not able to help with that on this line, but someone from the studio will call you back soon. Have a good day!",
+        },
+      ],
       tools: buildAssistantTools(toolServerUrl!),
     },
     transcriber: {

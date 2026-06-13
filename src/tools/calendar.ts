@@ -15,6 +15,8 @@ import {
   normalizeLocalDateTime,
   parseClockToMinutes,
   parseTimeToMinutes,
+  isSessionSlotInPast,
+  isStudioDateFullyPast,
   validateSessionSlot,
   weekdayFromDate,
 } from "../business-hours.js";
@@ -115,8 +117,16 @@ function resolveDayDate(dayOfWeek: string): string {
 
   const base = new Date(`${now.year}-${now.month}-${now.day}T12:00:00Z`);
   base.setUTCDate(base.getUTCDate() + daysAhead);
-  const target = studioDateParts(base);
-  return `${target.year}-${target.month}-${target.day}`;
+  let target = studioDateParts(base);
+  let date = `${target.year}-${target.month}-${target.day}`;
+
+  if (!wantsNextWeek && isStudioDateFullyPast(date, day)) {
+    base.setUTCDate(base.getUTCDate() + 7);
+    target = studioDateParts(base);
+    date = `${target.year}-${target.month}-${target.day}`;
+  }
+
+  return date;
 }
 
 function normalizeDayOfWeek(dayOfWeek: string): string {
@@ -183,7 +193,9 @@ async function getAvailableSlotsForDay(dayOfWeek: string): Promise<SlotInfo[]> {
   const date = resolveDayDate(dayOfWeek);
   const allSlots = generateSlotsForDate(date, day);
   const events = await listEventsOnDate(date);
-  return allSlots.filter((slot) => !events.some((event) => eventBlocksSlot(event, slot.dateTime)));
+  return allSlots
+    .filter((slot) => !isSessionSlotInPast(slot.dateTime))
+    .filter((slot) => !events.some((event) => eventBlocksSlot(event, slot.dateTime)));
 }
 
 export async function getStudioBusinessHours(): Promise<{ timezone: string; hours: ReturnType<typeof getBusinessHours>; display: string }> {
@@ -234,7 +246,7 @@ export async function listAvailableSlots(dayOfWeek: string): Promise<{
   const slots = await getAvailableSlotsForDay(day);
   const summary =
     slots.length > 0
-      ? `${slots.length} openings on ${day} ${date}. Ask what time works — do not read the full list aloud.`
+      ? `${slots.length} openings on ${day} ${date}.`
       : `Fully booked on ${day} ${date}.`;
 
   return { dayOfWeek: day, date, slots, closed: false, openSlotCount: slots.length, summary };
@@ -426,8 +438,8 @@ export async function findBookings(
     bookings.length === 0
       ? "No upcoming sessions found for that name."
       : bookings.length === 1
-        ? `Current booking: ${bookings[0].displayTime}. For cancel/reschedule use dateTime exactly: ${bookings[0].dateTime}`
-        : `${bookings.length} upcoming sessions. Use exact dateTime from bookings for cancel/reschedule.`;
+        ? `One session: ${bookings[0].displayTime}.`
+        : `${bookings.length} upcoming sessions.`;
 
   return { bookings, count: bookings.length, summary };
 }

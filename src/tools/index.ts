@@ -77,7 +77,7 @@ const findBookingsTool = {
   function: {
     name: "findBookings",
     description:
-      "Find upcoming bookings by caller's full name only — no phone needed. Read summary and use exact dateTime for cancel/reschedule.",
+      "Find upcoming bookings by caller's full name only — no phone needed. Use dateTime from bookings array for cancel/reschedule tool calls; tell the caller displayTime only.",
     parameters: {
       type: "object",
       properties: {
