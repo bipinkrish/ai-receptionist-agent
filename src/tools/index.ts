@@ -21,11 +21,14 @@ const listAvailableSlotsTool = {
   function: {
     name: "listAvailableSlots",
     description:
-      "List open 30-minute slots for a day. Returns a summary and slot list — ask the caller what time they want; do not read every slot aloud.",
+      "List open 30-minute slots for a weekday. Pass the day name only (e.g. Saturday) — resolves to the next upcoming that day automatically. Never ask the caller for a calendar date.",
     parameters: {
       type: "object",
       properties: {
-        dayOfWeek: { type: "string", description: "e.g. Monday, Thursday" },
+        dayOfWeek: {
+          type: "string",
+          description: "Weekday name only: Monday, Saturday, next Saturday, etc.",
+        },
       },
       required: ["dayOfWeek"],
     },
@@ -36,11 +39,12 @@ const checkSlotTool = {
   type: "function" as const,
   function: {
     name: "checkSlot",
-    description: "Check if a specific 30-minute session slot is available on a given day and time.",
+    description:
+      "Check if a time slot is available. Pass weekday name (e.g. Saturday) — date is resolved automatically. Never ask the caller for a calendar date.",
     parameters: {
       type: "object",
       properties: {
-        dayOfWeek: { type: "string" },
+        dayOfWeek: { type: "string", description: "Weekday name: Saturday, next Saturday, etc." },
         time: { type: "string", description: "e.g. 6pm, 6:30pm, 18:00" },
       },
       required: ["dayOfWeek", "time"],

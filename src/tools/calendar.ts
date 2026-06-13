@@ -96,7 +96,9 @@ function formatDisplayTime(dateTime: string): string {
 }
 
 function resolveDayDate(dayOfWeek: string): string {
-  const dayIndex = getDayIndex(dayOfWeek);
+  const wantsNextWeek = /\bnext\b/i.test(dayOfWeek);
+  const day = normalizeDayOfWeek(dayOfWeek);
+  const dayIndex = getDayIndex(day);
   const now = studioDateParts();
   const currentDay = new Intl.DateTimeFormat("en-US", {
     timeZone: STUDIO_TIMEZONE,
@@ -108,11 +110,18 @@ function resolveDayDate(dayOfWeek: string): string {
 
   let daysAhead = dayIndex - currentIndex;
   if (daysAhead < 0) daysAhead += 7;
+  if (wantsNextWeek && daysAhead === 0) daysAhead = 7;
 
   const base = new Date(`${now.year}-${now.month}-${now.day}T12:00:00Z`);
   base.setUTCDate(base.getUTCDate() + daysAhead);
   const target = studioDateParts(base);
   return `${target.year}-${target.month}-${target.day}`;
+}
+
+function normalizeDayOfWeek(dayOfWeek: string): string {
+  const match = dayOfWeek.toLowerCase().match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  if (!match) return dayOfWeek.toLowerCase().trim();
+  return match[1];
 }
 
 function generateSlotsForDate(date: string, dayOfWeek: string): SlotInfo[] {
@@ -169,8 +178,9 @@ function eventBlocksSlot(
 }
 
 async function getAvailableSlotsForDay(dayOfWeek: string): Promise<SlotInfo[]> {
+  const day = normalizeDayOfWeek(dayOfWeek);
   const date = resolveDayDate(dayOfWeek);
-  const allSlots = generateSlotsForDate(date, dayOfWeek);
+  const allSlots = generateSlotsForDate(date, day);
   const events = await listEventsOnDate(date);
   return allSlots.filter((slot) => !events.some((event) => eventBlocksSlot(event, slot.dateTime)));
 }
@@ -192,7 +202,7 @@ export async function listAvailableSlots(dayOfWeek: string): Promise<{
   openSlotCount: number;
   summary: string;
 }> {
-  const day = dayOfWeek.toLowerCase();
+  const day = normalizeDayOfWeek(dayOfWeek);
   const date = resolveDayDate(dayOfWeek);
 
   if (isStudioHoliday(day)) {
@@ -220,7 +230,7 @@ export async function listAvailableSlots(dayOfWeek: string): Promise<{
     };
   }
 
-  const slots = await getAvailableSlotsForDay(dayOfWeek);
+  const slots = await getAvailableSlotsForDay(day);
   const summary =
     slots.length > 0
       ? `${slots.length} openings on ${day} ${date}. Ask what time works — do not read the full list aloud.`
@@ -230,15 +240,16 @@ export async function listAvailableSlots(dayOfWeek: string): Promise<{
 }
 
 export async function checkSlot(dayOfWeek: string, time: string): Promise<AvailabilityResult> {
+  const day = normalizeDayOfWeek(dayOfWeek);
   const date = resolveDayDate(dayOfWeek);
   const requestedMin = parseTimeToMinutes(time);
   const hour = Math.floor(requestedMin / 60);
   const minute = requestedMin % 60;
-  const [year, month, day] = date.split("-");
-  const dateTime = formatStudioDateTime(year, month, day, hour, minute);
+  const [year, month, dayNum] = date.split("-");
+  const dateTime = formatStudioDateTime(year, month, dayNum, hour, minute);
 
   const validation = validateSessionSlot(dateTime);
-  const nearby = isStudioHoliday(dayOfWeek) ? [] : (await getAvailableSlotsForDay(dayOfWeek)).slice(0, 2);
+  const nearby = isStudioHoliday(day) ? [] : (await getAvailableSlotsForDay(dayOfWeek)).slice(0, 2);
 
   if (!validation.valid) {
     return {
@@ -286,7 +297,7 @@ export async function bookSlot(
   }
 
   const slotCheck = await checkSlot(
-    validation.dayOfWeek,
+    day,
     formatTimeFromParts(validation.hour, validation.minute),
   );
   if (!slotCheck.available) {

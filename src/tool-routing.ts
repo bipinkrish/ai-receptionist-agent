@@ -217,7 +217,7 @@ export function getActiveTools(
   return deduped.length > 0 ? deduped : undefined;
 }
 
-const SCHEDULING_POLICY = `\nScheduling: ask for first AND last name (not phone digits). Collect phone number in any format — digits or spoken. Then listAvailableSlots/checkSlot/bookSlot. Ask what time works — don't list all slots. 1-2 polite sentences.`;
+const SCHEDULING_POLICY = `\nScheduling: NEVER ask the caller for a calendar date. They say "Saturday" or "next Saturday" → pass "Saturday" to listAvailableSlots/checkSlot (tools resolve the date). Ask what TIME works, not what date. Collect name + phone before bookSlot.`;
 
 const HOURS_POLICY = `\nCall getBusinessHours — answer briefly.`;
 

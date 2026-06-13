@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { MODEL } from "../agent.js";
-import { VOICE_POLICY, VOICE_FIRST_MESSAGE } from "../policy.js";
+import { VOICE_POLICY, VOICE_FIRST_MESSAGE, buildSystemPrompt } from "../policy.js";
 import { buildAssistantTools } from "./tools.js";
 
 dotenv.config();
@@ -76,7 +76,7 @@ function buildAssistantPayload() {
       provider: "groq",
       model: MODEL,
       maxTokens: 120,
-      messages: [{ role: "system", content: VOICE_POLICY }],
+      messages: [{ role: "system", content: buildSystemPrompt(VOICE_POLICY) }],
       tools: buildAssistantTools(toolServerUrl!),
     },
     transcriber: {

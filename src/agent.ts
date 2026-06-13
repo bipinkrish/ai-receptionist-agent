@@ -4,7 +4,7 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
 } from "groq-sdk/resources/chat/completions";
-import { SYSTEM_POLICY, OPENING_GREETING } from "./policy.js";
+import { SYSTEM_POLICY, OPENING_GREETING, buildSystemPrompt } from "./policy.js";
 import { runTool } from "./tools/index.js";
 import { compactToolResult } from "./compact-tool-result.js";
 import {
@@ -30,7 +30,7 @@ async function callGroq(
   return groq.chat.completions.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    messages: [{ role: "system", content: SYSTEM_POLICY + extraSystem }, ...history],
+    messages: [{ role: "system", content: buildSystemPrompt(SYSTEM_POLICY + extraSystem) }, ...history],
     ...(tools?.length ? { tools, tool_choice: toolChoice } : {}),
   });
 }
